@@ -60,6 +60,9 @@ def to_distribution(vec: torch.Tensor, tau: float = 1.0) -> torch.Tensor:
     centrar en 0 y escalar a varianza 1. Esto preserva la forma relativa de la
     distribución sin colapsarla.
     """
+    # Convertir a float32 para evitar overflow/underflow con bfloat16
+    vec = vec.float()
+
     # Z-score normalization para evitar colapso de softmax
     mean = vec.mean()
     std = vec.std()

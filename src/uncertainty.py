@@ -118,8 +118,9 @@ def roi_weighted_pooling(h_img: torch.Tensor, weights: np.ndarray) -> torch.Tens
     Returns:
         Vector (hidden_dim,) con el pooling ponderado.
     """
-    w = torch.tensor(weights, dtype=h_img.dtype, device=h_img.device)
-    return (h_img * w.unsqueeze(-1)).sum(dim=0)
+    # Convertir a float32 para evitar pérdida de precisión con bfloat16
+    w = torch.tensor(weights, dtype=torch.float32, device=h_img.device)
+    return (h_img.float() * w.unsqueeze(-1)).sum(dim=0)
 
 
 # ------------------------------------------------------------------------------
@@ -157,13 +158,16 @@ def compute_attention_weights(
             "attn_implementation='eager'? sdpa no soporta output_attentions."
         )
 
-    # attentions[0] es la tupla por capa del prefill
-    # Cada elemento: (batch, num_heads, seq_len, seq_len)
-    if layer >= len(attentions[0]):
+    # attentions[0] es la tupla por capa del prefill (sin embeddings)
+    # hidden_states tiene 35 entradas (0=embeddings, 1-34=capas)
+    # attentions tiene 34 entradas (0-33=capas) → layer-1
+    attn_idx = layer - 1
+    if attn_idx < 0 or attn_idx >= len(attentions[0]):
         raise ValueError(
-            f"Capa {layer} fuera de rango: attentions[0] tiene {len(attentions[0])} entradas"
+            f"Capa {layer} fuera de rango: attentions[0] tiene {len(attentions[0])} entradas "
+            f"(índice válido: 1–{len(attentions[0])})"
         )
-    attn_layer = attentions[0][layer]  # (1, num_heads, seq_len, seq_len)
+    attn_layer = attentions[0][attn_idx]  # (1, num_heads, seq_len, seq_len)
 
     # Atención del último token (índice -1) hacia todos los tokens
     # Promediar sobre cabezas de atención y convertir a float32 (NumPy no soporta bfloat16)
@@ -192,8 +196,9 @@ def attention_weighted_pooling(h_img: torch.Tensor, weights: np.ndarray) -> torc
     Returns:
         Vector (hidden_dim,).
     """
-    w = torch.tensor(weights, dtype=h_img.dtype, device=h_img.device)
-    return (h_img * w.unsqueeze(-1)).sum(dim=0)
+    # Convertir a float32 para evitar pérdida de precisión con bfloat16
+    w = torch.tensor(weights, dtype=torch.float32, device=h_img.device)
+    return (h_img.float() * w.unsqueeze(-1)).sum(dim=0)
 
 
 # ------------------------------------------------------------------------------
