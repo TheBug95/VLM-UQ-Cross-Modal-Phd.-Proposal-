@@ -606,6 +606,8 @@ def run_full(cfg: Config) -> None:
 
     print(f"[full] {len(master)} imágenes × 2 prompts = {len(master) * 2} inferencias")
 
+    results = []
+
     for _, row in master.iterrows():
         try:
             img = load_image(cfg, row["image_filename"], row["split"])
@@ -634,13 +636,6 @@ def run_full(cfg: Config) -> None:
 
             correct_val = int(signals["pred"] == label_val)
 
-            # Debug: primera imagen con label=0
-            if label_val == 0 and not hasattr(run_full, "_debug_printed"):
-                print(f"[DEBUG] Primera imagen Normal: {row['image_filename']}, "
-                      f"row['label']={row['label']} (tipo={type(row['label'])}), "
-                      f"label_val={label_val}, correct_val={correct_val}")
-                run_full._debug_printed = True
-
             record = {
                 "image_filename": row["image_filename"],
                 "patient_id": row["patient_id"],
@@ -651,8 +646,15 @@ def run_full(cfg: Config) -> None:
                 "correct": correct_val,
                 "inference_ms": elapsed_ms,
             }
-            append_result(cfg, record)
+            results.append(record)
             print(f"[full] {row['image_filename']} {prompt_id}: p_yes={signals['p_yes']:.3f} correct={record['correct']}")
+
+    # Escribir todo al final con un solo to_csv (evita problemas de tipo al append)
+    df = pd.DataFrame(results)
+    out_path = Path(cfg.paths.results) / "results_full.csv"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, index=False)
+    print(f"\n[full] Guardado: {out_path} ({len(df)} filas)")
 
 
 # ------------------------------------------------------------------------------
