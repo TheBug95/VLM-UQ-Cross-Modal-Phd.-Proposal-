@@ -36,6 +36,7 @@ from src.uncertainty import (
     attention_weighted_pooling,
     compute_attention_weights,
     compute_roi_weights,
+    generate_attention_heatmap,
     roi_weighted_pooling,
     save_attention_heatmap,
 )
