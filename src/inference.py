@@ -49,8 +49,17 @@ def to_distribution(vec: torch.Tensor, tau: float = 1.0) -> torch.Tensor:
     """Convierte un vector crudo a distribución con F.log_softmax en float64.
 
     Regla numérica dura (ver AGENTS.md §5): las massive activations de Gemma
-    colapsan softmax float32 a ceros exactos. float64 lo evita.
+    colapsan softmax a distribuciones degeneradas ([0,...,1,...,0]), incluso
+    en float64. Para evitarlo, aplicamos z-score normalization antes de softmax:
+    centrar en 0 y escalar a varianza 1. Esto preserva la forma relativa de la
+    distribución sin colapsarla.
     """
+    # Z-score normalization para evitar colapso de softmax
+    mean = vec.mean()
+    std = vec.std()
+    if std > 1e-10:
+        vec = (vec - mean) / std
+
     log_p = torch.nn.functional.log_softmax(vec / tau, dim=0, dtype=torch.float64)
     return log_p.exp()
 
@@ -435,7 +444,7 @@ def run_pilot(cfg: Config, n: int = 20) -> None:
             p_yes_values.append(signals["p_yes"])
 
             # Guardar KL primaria para checks
-            kl_key = f"kl_v_t_L34_tau1_mean"
+            kl_key = "kl_v_t_L34_tau1.0_mean"
             if kl_key in signals:
                 kl_values.append(signals[kl_key])
 
@@ -447,14 +456,14 @@ def run_pilot(cfg: Config, n: int = 20) -> None:
     img = load_image(cfg, pilot_df.iloc[0]["image_filename"], pilot_df.iloc[0]["split"])
     s1 = pipeline.infer_one(img, "p1")
     s2 = pipeline.infer_one(img, "p1")
-    kl1 = s1.get("kl_v_t_L34_tau1_mean", np.nan)
-    kl2 = s2.get("kl_v_t_L34_tau1_mean", np.nan)
+    kl1 = s1.get("kl_v_t_L34_tau1.0_mean", np.nan)
+    kl2 = s2.get("kl_v_t_L34_tau1.0_mean", np.nan)
     print(f"[{'PASS' if np.isclose(kl1, kl2, rtol=1e-5) else 'FAIL'}] Reproducibilidad — KL1={kl1:.6f}, KL2={kl2:.6f}")
 
     # Sanity #5: imagen negra → KL visiblemente alta
     black = Image.fromarray(np.zeros((512, 512, 3), dtype=np.uint8))
     s_black = pipeline.infer_one(black, "p1")
-    black_kl = s_black.get("kl_v_t_L34_tau1_mean", np.nan)
+    black_kl = s_black.get("kl_v_t_L34_tau1.0_mean", np.nan)
     if kl_values:
         mean_kl = float(np.nanmean(kl_values))
         status = "PASS" if black_kl > mean_kl else "WARN"
