@@ -123,6 +123,132 @@ def roi_weighted_pooling(h_img: torch.Tensor, weights: np.ndarray) -> torch.Tens
 
 
 # ------------------------------------------------------------------------------
+# Atención cruzada (deployable alternative a máscaras)
+# ------------------------------------------------------------------------------
+def compute_attention_weights(
+    attentions: tuple,
+    layer: int,
+    img_positions: torch.Tensor,
+    seq_len: int,
+) -> np.ndarray:
+    """Extrae pesos de atención del último token hacia los tokens de imagen.
+
+    En un transformer decoder-only, el último token (que genera la respuesta)
+    atiende a todos los tokens anteriores. Los pesos sobre los tokens visuales
+    nos dicen "dónde mira el modelo" al decidir.
+
+    Args:
+        attentions: tupla de atenciones por paso de generación (de
+            model.generate(output_attentions=True)). Con max_new_tokens=1,
+            solo existe attentions[0] (prefill).
+        layer: índice de capa (17, 26, 34).
+        img_positions: tensor con las posiciones de los tokens de imagen.
+        seq_len: longitud total de la secuencia.
+
+    Returns:
+        Array (num_image_tokens,) con pesos normalizados que suman 1.
+    """
+    # attentions[0] es la tupla por capa del prefill
+    # Cada elemento: (batch, num_heads, seq_len, seq_len)
+    attn_layer = attentions[0][layer]  # (1, num_heads, seq_len, seq_len)
+
+    # Atención del último token (índice -1) hacia todos los tokens
+    # Promediar sobre cabezas de atención
+    attn_last = attn_layer[0, :, -1, :].mean(dim=0)  # (seq_len,)
+
+    # Extraer solo los pesos sobre tokens de imagen
+    img_attn = attn_last[img_positions].cpu().numpy()
+
+    # Normalizar
+    total = img_attn.sum()
+    if total > 0:
+        img_attn = img_attn / total
+    else:
+        img_attn = np.ones_like(img_attn) / len(img_attn)
+
+    return img_attn
+
+
+def attention_weighted_pooling(h_img: torch.Tensor, weights: np.ndarray) -> torch.Tensor:
+    """Aplica pooling ponderado por atención sobre los tokens de imagen.
+
+    Args:
+        h_img: tensor (num_tokens, hidden_dim).
+        weights: array (num_tokens,) con pesos que suman 1.
+
+    Returns:
+        Vector (hidden_dim,).
+    """
+    w = torch.tensor(weights, dtype=h_img.dtype, device=h_img.device)
+    return (h_img * w.unsqueeze(-1)).sum(dim=0)
+
+
+# ------------------------------------------------------------------------------
+# Heatmap de atención
+# ------------------------------------------------------------------------------
+def generate_attention_heatmap(
+    image: Image.Image,
+    weights: np.ndarray,
+    grid_size: int = 16,
+    alpha: float = 0.6,
+    colormap: str = "jet",
+) -> Image.Image:
+    """Genera un heatmap de atención superpuesto sobre la imagen original.
+
+    Args:
+        image: imagen PIL original (cualquier tamaño).
+        weights: array (grid_size * grid_size,) con pesos por token.
+        grid_size: lado del grid (16 para 256 tokens).
+        alpha: transparencia del heatmap (0 = invisible, 1 = opaco).
+        colormap: mapa de colores de matplotlib.
+
+    Returns:
+        Imagen PIL con el heatmap superpuesto.
+    """
+    import matplotlib.cm as cm
+    import matplotlib.pyplot as plt
+
+    # Convertir imagen a array y redimensionar a 896×896 (tamaño de entrada del modelo)
+    target_size = 896
+    img_resized = image.resize((target_size, target_size), resample=Image.Resampling.BILINEAR)
+    img_arr = np.asarray(img_resized, dtype=np.float32) / 255.0
+
+    # Crear mapa de calor desde los pesos
+    heat = weights.reshape(grid_size, grid_size)
+    cell_size = target_size // grid_size
+
+    # Upsampling del heatmap a 896×896 (cada celda se expande)
+    heat_up = np.kron(heat, np.ones((cell_size, cell_size)))
+
+    # Normalizar para visualización
+    if heat_up.max() > heat_up.min():
+        heat_up = (heat_up - heat_up.min()) / (heat_up.max() - heat_up.min())
+
+    # Aplicar colormap
+    cmap = cm.get_cmap(colormap)
+    heat_rgb = cmap(heat_up)[:, :, :3]  # (896, 896, 3)
+
+    # Superponer
+    overlay = (1 - alpha) * img_arr + alpha * heat_rgb
+    overlay = (np.clip(overlay, 0, 1) * 255).astype(np.uint8)
+
+    return Image.fromarray(overlay)
+
+
+def save_attention_heatmap(
+    image: Image.Image,
+    weights: np.ndarray,
+    out_path: str | Path,
+    **kwargs,
+) -> None:
+    """Guarda el heatmap de atención en disco."""
+    heatmap = generate_attention_heatmap(image, weights, **kwargs)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    heatmap.save(out_path)
+
+
+# ------------------------------------------------------------------------------
 # Utilidades para análisis
 # ------------------------------------------------------------------------------
 def get_roi_coverage(cfg: Config, image_filename: str, split: str) -> float | None:

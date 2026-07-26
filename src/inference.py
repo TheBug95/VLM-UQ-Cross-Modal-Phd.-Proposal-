@@ -32,7 +32,13 @@ from scipy.spatial.distance import jensenshannon
 
 from src.config import Config
 from src.data import download_dataset
-from src.uncertainty import compute_roi_weights, roi_weighted_pooling
+from src.uncertainty import (
+    attention_weighted_pooling,
+    compute_attention_weights,
+    compute_roi_weights,
+    roi_weighted_pooling,
+    save_attention_heatmap,
+)
 
 # Columnas de salida (orden congelado por el diseño)
 BASE_COLUMNS = [
@@ -156,6 +162,7 @@ class MedGemmaInference:
         out,
         inputs: dict[str, torch.Tensor],
         roi_weights: np.ndarray | None = None,
+        attentions: tuple | None = None,
     ) -> dict[str, Any]:
         """Extrae logits, baselines y las 54 variantes de KL/JSD."""
         results: dict[str, Any] = {}
@@ -268,6 +275,22 @@ class MedGemmaInference:
                         p_vis_roi.cpu().numpy(), p_text.cpu().numpy()
                     )
 
+            # Ablación attention-weighted pooling (deployable, sin máscaras externas)
+            if attentions is not None:
+                attn_weights = compute_attention_weights(
+                    attentions, layer, img_positions, seq_len=hs[layer].shape[1]
+                )
+                p_vis_attn_vec = attention_weighted_pooling(h_img, attn_weights)
+                for tau in self.cfg.uncertainty.temperatures:
+                    p_vis_attn = to_distribution(p_vis_attn_vec, tau)
+                    p_text = to_distribution(p_text_vec, tau)
+                    suffix = f"L{layer}_tau{tau}_attn"
+                    results[f"kl_v_t_{suffix}"] = kl_div(p_vis_attn, p_text, eps)
+                    results[f"kl_t_v_{suffix}"] = kl_div(p_text, p_vis_attn, eps)
+                    results[f"jsd_{suffix}"] = jsd(
+                        p_vis_attn.cpu().numpy(), p_text.cpu().numpy()
+                    )
+
         return results
 
     # ------------------------------------------------------------------
@@ -279,11 +302,14 @@ class MedGemmaInference:
         prompt_id: str,
         image_filename: str | None = None,
         split: str | None = None,
+        output_attentions: bool = False,
     ) -> dict[str, Any]:
         """Ejecuta la pasada single-pass sobre una imagen con un prompt.
 
         Si se pasan image_filename y split, se calculan pesos ROI desde la
         máscara de disco y se añaden las columnas de ablación roi_weighted.
+        Si output_attentions=True, se añaden las columnas de ablación
+        attention_weighted (deployable, sin máscaras externas).
         """
         prompt = self.build_prompt(prompt_id)
         inputs = self.processor(images=image, text=prompt, return_tensors="pt").to(self.device)
@@ -295,6 +321,7 @@ class MedGemmaInference:
                 do_sample=False,
                 output_scores=True,
                 output_hidden_states=True,
+                output_attentions=output_attentions,
                 return_dict_in_generate=True,
             )
 
@@ -305,8 +332,60 @@ class MedGemmaInference:
                 grid_size=int(np.sqrt(self.cfg.inference.num_image_tokens)),
             )
 
-        signals = self._extract_signals(out, inputs, roi_weights=roi_weights)
+        attentions = out.attentions if output_attentions else None
+        signals = self._extract_signals(out, inputs, roi_weights=roi_weights, attentions=attentions)
         return signals
+
+    # ------------------------------------------------------------------
+    # Heatmap de atención
+    # ------------------------------------------------------------------
+    def generate_attention_heatmap(
+        self,
+        image: Image.Image,
+        prompt_id: str,
+        layer: int = 34,
+        out_path: str | Path | None = None,
+    ) -> Image.Image:
+        """Ejecuta inferencia y genera un heatmap de atención superpuesto.
+
+        Devuelve la imagen PIL con el heatmap. Si out_path se pasa, también
+        la guarda en disco.
+        """
+        prompt = self.build_prompt(prompt_id)
+        inputs = self.processor(images=image, text=prompt, return_tensors="pt").to(self.device)
+
+        with torch.inference_mode():
+            out = self.model.generate(
+                **inputs,
+                max_new_tokens=1,
+                do_sample=False,
+                output_scores=True,
+                output_hidden_states=True,
+                output_attentions=True,
+                return_dict_in_generate=True,
+            )
+
+        # Extraer pesos de atención
+        input_ids = inputs["input_ids"][0]
+        img_token_id = self.cfg.tokens.image_token_index
+        img_positions = (input_ids == img_token_id).nonzero().flatten()
+
+        attn_weights = compute_attention_weights(
+            out.attentions, layer, img_positions, seq_len=input_ids.shape[0]
+        )
+
+        # Generar heatmap
+        heatmap = generate_attention_heatmap(
+            image, attn_weights,
+            grid_size=int(np.sqrt(self.cfg.inference.num_image_tokens)),
+        )
+
+        if out_path is not None:
+            out_path = Path(out_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            heatmap.save(out_path)
+
+        return heatmap
 
     # ------------------------------------------------------------------
     # Self-consistency (baseline multi-pass)
@@ -376,8 +455,12 @@ def append_result(cfg: Config, row: dict[str, Any], filename: str = "results_ful
 # ------------------------------------------------------------------------------
 # Piloto con sanity checks
 # ------------------------------------------------------------------------------
-def run_pilot(cfg: Config, n: int = 20) -> None:
-    """Ejecuta el piloto de n imágenes con sanity checks obligatorios."""
+def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False) -> None:
+    """Ejecuta el piloto de n imágenes con sanity checks obligatorios.
+
+    Si with_attentions=True, extrae atenciones cruzadas y genera heatmaps
+    de ejemplo para las primeras 3 imágenes.
+    """
     print("=" * 70)
     print("PILOTO — sanity checks obligatorios")
     print("=" * 70)
@@ -427,6 +510,7 @@ def run_pilot(cfg: Config, n: int = 20) -> None:
                 img, prompt_id,
                 image_filename=row["image_filename"],
                 split=row["split"],
+                output_attentions=with_attentions,
             )
             elapsed_ms = (time.time() - t0) * 1000
 
@@ -475,6 +559,15 @@ def run_pilot(cfg: Config, n: int = 20) -> None:
     p_yes_arr = np.array(p_yes_values)
     collapsed = (p_yes_arr < 0.01).all() or (p_yes_arr > 0.99).all()
     print(f"[{'FAIL' if collapsed else 'PASS'}] P(yes) no colapsada — rango [{p_yes_arr.min():.3f}, {p_yes_arr.max():.3f}]")
+
+    # Generar heatmaps de atención de ejemplo (si está activado)
+    if with_attentions:
+        print("\n[pilot] Generando heatmaps de atención de ejemplo...")
+        for _, row in pilot_df.head(3).iterrows():
+            img = load_image(cfg, row["image_filename"], row["split"])
+            heatmap_path = Path(cfg.paths.figures) / f"heatmap_{row['image_filename'].replace('.jpg', '.png')}"
+            pipeline.generate_attention_heatmap(img, "p1", layer=34, out_path=heatmap_path)
+            print(f"  → {heatmap_path}")
 
     # Guardar piloto
     df = pd.DataFrame(results)
@@ -581,6 +674,8 @@ def main() -> None:
     parser.add_argument("--run-full", action="store_true", help="Ejecutar corrida completa")
     parser.add_argument("--self-consistency", action="store_true", help="Ejecutar baseline multi-pass")
     parser.add_argument("--n", type=int, default=20, help="Imágenes para el piloto")
+    parser.add_argument("--attentions", action="store_true",
+                        help="Extraer atenciones cruzadas y generar heatmaps (piloto)")
     args = parser.parse_args()
 
     cfg = Config()
@@ -589,7 +684,7 @@ def main() -> None:
     cfg.set_determinism()
 
     if args.pilot:
-        run_pilot(cfg, n=args.n)
+        run_pilot(cfg, n=args.n, with_attentions=args.attentions)
     elif args.run_full:
         run_full(cfg)
     elif args.self_consistency:
