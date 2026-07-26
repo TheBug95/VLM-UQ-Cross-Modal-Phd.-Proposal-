@@ -299,6 +299,17 @@ No hay framework de testing configurado. El diseño impone **8 sanity checks** q
 - **El objetivo de éxito:** AUROC ≥ 0.65 en detección de errores con IC bootstrap 95% reportado honestamente (con N=129 el IC es ancho: ±0.10–0.13 — lenguaje de "evidencia fuerte" vs. "sugestiva" según si excluye 0.5). H4: correlación Spearman positiva entre u(x) y `cdr_grade` en los 69 patológicos.
 - **Punto Go/No-Go:** día 4, al terminar la estadística principal. Si H0 no se rechaza, seguir el plan de contingencia de la Sección 8.3 de la definición.
 
+### 11.1 Métodos de explicación considerados y descartados como señal UQ
+
+| Método | Por qué se descartó como señal UQ | Dónde se documenta |
+|---|---|---|
+| **Grad-CAM sobre tokens de visión** | Requiere backward pass (no es single-pass); en transformers decoder-only los hidden states no son "píxeles"; bfloat16/4-bit hace gradientes inestables. | Future work del paper |
+| **Integrated Gradients (IG)** | Requiere 50–300 pasadas (rompe el framing 1× costo); equivalente a métodos multi-pass ya descartados. | Future work del paper |
+| **Atención cruzada** | Ya implementada como ablación deployable. Resultado: AUROC 0.559 < mean 0.655 → la atención del modelo frozen no está alineada con la tarea. | Tabla de ablaciones del paper |
+| **ROI con máscara de disco** | Implementada como *oracle* (no deployable). Resultado: AUROC 0.889 → cota superior que cuantifica la dilución espacial. | Tabla de ablaciones del paper |
+
+**Conclusión:** la señal principal deployable es `mean` pooling. Grad-CAM/IG quedan como future work por costo computacional y por pertenecer a la familia XAI (explicación), no UQ (detección de errores).
+
 ---
 
 ## 12. Referencias rápidas
