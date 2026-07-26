@@ -625,14 +625,30 @@ def run_full(cfg: Config) -> None:
                 continue
             elapsed_ms = (time.time() - t0) * 1000
 
+            # Verificación robusta de label y correct
+            label_val = row["label"]
+            if pd.isna(label_val):
+                warnings.warn(f"label NaN para {row['image_filename']} en master_table")
+                continue
+            label_val = int(label_val)
+
+            correct_val = int(signals["pred"] == label_val)
+
+            # Debug: primera imagen con label=0
+            if label_val == 0 and not hasattr(run_full, "_debug_printed"):
+                print(f"[DEBUG] Primera imagen Normal: {row['image_filename']}, "
+                      f"row['label']={row['label']} (tipo={type(row['label'])}), "
+                      f"label_val={label_val}, correct_val={correct_val}")
+                run_full._debug_printed = True
+
             record = {
                 "image_filename": row["image_filename"],
                 "patient_id": row["patient_id"],
                 "prompt_id": prompt_id.upper(),
                 "split": row["split"],
                 **signals,
-                "label": int(row["label"]),
-                "correct": int(signals["pred"] == row["label"]),
+                "label": label_val,
+                "correct": correct_val,
                 "inference_ms": elapsed_ms,
             }
             append_result(cfg, record)
