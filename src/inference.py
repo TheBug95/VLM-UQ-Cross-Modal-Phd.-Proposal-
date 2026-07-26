@@ -31,6 +31,7 @@ from PIL import Image
 from scipy.spatial.distance import jensenshannon
 
 from src.config import Config
+from src.data import download_dataset
 from src.uncertainty import compute_roi_weights, roi_weighted_pooling
 
 # Columnas de salida (orden congelado por el diseño)
@@ -372,6 +373,9 @@ def run_pilot(cfg: Config, n: int = 20) -> None:
     print("PILOTO — sanity checks obligatorios")
     print("=" * 70)
 
+    # Asegurar que el dataset está descargado
+    download_dataset(cfg)
+
     # Cargar master_table para seleccionar n imágenes balanceadas
     master = pd.read_csv(cfg.paths.master_table)
     per_class = n // 2
@@ -482,6 +486,9 @@ def run_pilot(cfg: Config, n: int = 20) -> None:
 # ------------------------------------------------------------------------------
 def run_full(cfg: Config) -> None:
     """Ejecuta la corrida completa: 129 imágenes × 2 prompts = 258 inferencias."""
+    # Asegurar que el dataset está descargado
+    download_dataset(cfg)
+
     master = pd.read_csv(cfg.paths.master_table)
     pipeline = MedGemmaInference(cfg)
     pipeline.load()
