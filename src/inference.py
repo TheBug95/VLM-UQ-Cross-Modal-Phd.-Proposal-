@@ -118,6 +118,11 @@ class MedGemmaInference:
         else:
             kwargs["torch_dtype"] = getattr(torch, self.cfg.model.torch_dtype)
 
+        # Para output_attentions=True se requiere eager attention (sdpa no lo soporta)
+        attn_impl = getattr(self.cfg.model, "attn_implementation", None)
+        if attn_impl:
+            kwargs["attn_implementation"] = attn_impl
+
         self._processor = AutoProcessor.from_pretrained(model_name)
         self._model = AutoModelForImageTextToText.from_pretrained(model_name, **kwargs)
         self._model.eval()

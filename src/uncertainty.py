@@ -147,9 +147,22 @@ def compute_attention_weights(
 
     Returns:
         Array (num_image_tokens,) con pesos normalizados que suman 1.
+
+    Raises:
+        ValueError: si attentions está vacío o no tiene la estructura esperada.
     """
+    if not attentions or len(attentions) == 0:
+        raise ValueError(
+            "attentions está vacío. ¿Se cargó el modelo con "
+            "attn_implementation='eager'? sdpa no soporta output_attentions."
+        )
+
     # attentions[0] es la tupla por capa del prefill
     # Cada elemento: (batch, num_heads, seq_len, seq_len)
+    if layer >= len(attentions[0]):
+        raise ValueError(
+            f"Capa {layer} fuera de rango: attentions[0] tiene {len(attentions[0])} entradas"
+        )
     attn_layer = attentions[0][layer]  # (1, num_heads, seq_len, seq_len)
 
     # Atención del último token (índice -1) hacia todos los tokens
