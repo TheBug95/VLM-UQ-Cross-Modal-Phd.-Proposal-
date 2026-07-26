@@ -31,8 +31,7 @@ env.bak/
 venv.bak/
 
 # Datos y resultados (no subir dataset; results y figures sí se versionan)
-data/
-*.csv
+data/mm_odir_129
 *.tsv
 
 # Modelos y checkpoints
