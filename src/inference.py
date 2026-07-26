@@ -595,8 +595,13 @@ def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False) -> None:
 # ------------------------------------------------------------------------------
 # Corrida completa
 # ------------------------------------------------------------------------------
-def run_full(cfg: Config) -> None:
-    """Ejecuta la corrida completa: 129 imágenes × 2 prompts = 258 inferencias."""
+def run_full(cfg: Config, with_attentions: bool = False) -> None:
+    """Ejecuta la corrida completa: 129 imágenes × 2 prompts = 258 inferencias.
+
+    Si with_attentions=True, extrae atenciones cruzadas y añade columnas
+    *_attn (deployable, sin máscaras externas). Usa eager attention, más
+    lento y con más memoria que sdpa.
+    """
     # Asegurar que el dataset está descargado
     download_dataset(cfg)
 
@@ -605,6 +610,8 @@ def run_full(cfg: Config) -> None:
     pipeline.load()
 
     print(f"[full] {len(master)} imágenes × 2 prompts = {len(master) * 2} inferencias")
+    if with_attentions:
+        print("[full] Atenciones activadas (eager attention)")
 
     results = []
 
@@ -621,6 +628,7 @@ def run_full(cfg: Config) -> None:
                     img, prompt_id,
                     image_filename=row["image_filename"],
                     split=row["split"],
+                    output_attentions=with_attentions,
                 )
             except Exception as exc:  # noqa: BLE001
                 warnings.warn(f"Error en {row['image_filename']} {prompt_id}: {exc}")
@@ -713,7 +721,7 @@ def main() -> None:
     if args.pilot:
         run_pilot(cfg, n=args.n, with_attentions=args.attentions)
     elif args.run_full:
-        run_full(cfg)
+        run_full(cfg, with_attentions=args.attentions)
     elif args.self_consistency:
         run_self_consistency(cfg)
     else:
