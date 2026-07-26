@@ -166,8 +166,8 @@ def compute_attention_weights(
     attn_layer = attentions[0][layer]  # (1, num_heads, seq_len, seq_len)
 
     # Atención del último token (índice -1) hacia todos los tokens
-    # Promediar sobre cabezas de atención
-    attn_last = attn_layer[0, :, -1, :].mean(dim=0)  # (seq_len,)
+    # Promediar sobre cabezas de atención y convertir a float32 (NumPy no soporta bfloat16)
+    attn_last = attn_layer[0, :, -1, :].mean(dim=0).float()  # (seq_len,)
 
     # Extraer solo los pesos sobre tokens de imagen
     img_attn = attn_last[img_positions].cpu().numpy()
