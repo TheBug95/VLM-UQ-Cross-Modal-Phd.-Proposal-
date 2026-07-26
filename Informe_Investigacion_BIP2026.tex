@@ -1,0 +1,873 @@
+\documentclass[12pt,a4paper]{article}
+
+% ============================================================
+% PAQUETES
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{enumitem}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{natbib}
+\usepackage{fancyhdr}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{shapes,arrows,positioning,calc}
+
+% ============================================================
+% CONFIGURACIÓN DE PÁGINA
+% ============================================================
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+\setstretch{1.15}
+
+% ============================================================
+% CONFIGURACIÓN DE ENCABEZADOS
+% ============================================================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Informe de Investigación -- BIP 2026}
+\fancyhead[R]{\small\nouppercase{\leftmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ============================================================
+% CONFIGURACIÓN DE TÍTULOS
+% ============================================================
+\titleformat{\section}{\Large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection.}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection.}{0.5em}{}
+
+% ============================================================
+% COLORES Y LISTADOS
+% ============================================================
+\definecolor{codegreen}{rgb}{0.25,0.49,0.48}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.97,0.97,0.95}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+% ============================================================
+% NUEVOS COMANDOS
+% ============================================================
+\newcommand{\KL}{\mathrm{KL}}
+\newcommand{\JSD}{\mathrm{JSD}}
+\newcommand{\AUROC}{\mathrm{AUROC}}
+\newcommand{\AUPRC}{\mathrm{AUPRC}}
+\newcommand{\ECE}{\mathrm{ECE}}
+\newcommand{\VLM}{\text{VLM}}
+\newcommand{\UQ}{\text{UQ}}
+\newcommand{\XAI}{\text{XAI}}
+\newcommand{\MedVLM}{\text{MedVLM}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+% ============================================================
+% INFORMACIÓN DEL DOCUMENTO
+% ============================================================
+\title{\textbf{Cross-Modal Representation Disagreement as a Lightweight Uncertainty Signal for Glaucoma Detection in Medical Vision-Language Models}}
+\author{
+    \textbf{Miguel Guillermo Abreu Cárdenas}\\[0.3em]
+    Doctorado en Inteligencia Artificial Aplicada a Oftalmología\\
+    Tutor: Dr.~Saúl Calderón Ramírez\\[0.5em]
+    \textit{Instituto Tecnológico de Costa Rica}
+}
+\date{Julio 2026}
+
+% ============================================================
+% INICIO DEL DOCUMENTO
+% ============================================================
+\begin{document}
+
+% ---------- PORTADA ----------
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    {\Large\textsc{Instituto Tecnológico de Costa Rica}}\\[0.3cm]
+    {\large Programa de Doctorado en Inteligencia Artificial}\\[0.3cm]
+    {\large Área de Investigación: IA Aplicada a Oftalmología}
+    
+    \vspace{2cm}
+    
+    \rule{\linewidth}{0.5mm}\\[0.6cm]
+    {\Huge\bfseries Cross-Modal Representation Disagreement as a Lightweight Uncertainty Signal for Glaucoma Detection in Medical Vision-Language Models}\\[0.3cm]
+    \rule{\linewidth}{0.5mm}
+    
+    \vspace{1.5cm}
+    
+    {\Large\textbf{Informe de Investigación Académica}}\\[0.5cm]
+    {\large Propuesta de Paper para BIP 2026}
+    
+    \vspace{2cm}
+    
+    \begin{tabular}{rl}
+        \textbf{Autor:} & Miguel Guillermo Abreu Cárdenas \\[0.3em]
+        \textbf{Tutor:} & Dr.~Saúl Calderón Ramírez \\[0.3em]
+        \textbf{Fecha:} & Julio 2026 \\[0.3em]
+        \textbf{Venue Objetivo:} & 8th IEEE International Conference on BioInspired Processing (BIP 2026) \\
+    \end{tabular}
+    
+    \vfill
+    
+    {\small Costa Rica, 11--13 de Noviembre de 2026}
+\end{titlepage}
+
+% ---------- ÍNDICE ----------
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Resumen Ejecutivo}
+% ============================================================
+
+Este informe consolida la investigación desarrollada para la propuesta del paper \textit{Cross-Modal Representation Disagreement as a Lightweight Uncertainty Signal for Glaucoma Detection in Medical Vision-Language Models}, destinado a la 8th IEEE International Conference on BioInspired Processing (BIP 2026).
+
+\subsection{La contribución}
+
+Este paper propone que la \textbf{divergencia KL entre las representaciones visuales y textuales} de un Medical Vision-Language Model (MedGemma 4B), operando en \textbf{un solo forward pass} y sin entrenamiento adicional, constituye una señal de incertidumbre \textit{lightweight}, interpretable y clínicamente accionable para la detección de glaucoma en imágenes de fondo de ojo.
+
+A diferencia de métodos como MC-Dropout (multi-pass, costoso) o entropía predictiva (solo textual, no detecta alucinaciones visuales), nuestra señal captura el \textbf{desacuerdo cross-modal} entre lo que el modelo ``ve'' y lo que el modelo ``dice''.
+Evaluamos esta hipótesis en el dataset MM-ODIR-129 (129 imágenes de fondo de ojo, 60 normales y 69 patológicas con glaucoma), comparando contra múltiples baselines de \UQ\ y reportando \AUROC, \AUPRC, Brier score y \ECE.
+
+\subsection{Relevancia para la tesis doctoral}
+
+Los cuatro pilares de la tesis doctoral se articulan naturalmente alrededor de este método:
+
+\begin{enumerate}
+    \item \textbf{UQ (Pilar 1):} La KL cross-modal es una nueva familia de métodos \textit{single-pass} + \textit{feature-based} + \textit{cross-modal} que llena un vacío en el espacio metodológico.
+    
+    \item \textbf{XAI (Pilar 2):} La dirección de la KL es inherentemente explicativa: diagnostica \textit{qué tipo} de incertidumbre existe (visión vs.~texto).
+    
+    \item \textbf{Few-Shot (Pilar 3):} La KL puede filtrar pseudo-labels y seleccionar support sets de alta calidad en adaptación few-shot.
+    
+    \item \textbf{Segmentación (Pilar 4):} La KL global puede descomponerse en mapas de riesgo espacial para segmentación de disco/copa óptica.
+\end{enumerate}
+
+\subsection{Hallazgos clave}
+
+El trabajo consolidado en este informe abarca diez dimensiones de investigación profunda, cross-verificación de hallazgos y nueve insights cross-dimensionales.
+La metodología propuesta combina tres propiedades que ningún método existente une simultáneamente: \textbf{single-pass}, \textbf{basada en features internas} y \textbf{cross-modal}.
+
+% ============================================================
+\section{Introducción}
+% ============================================================
+
+\subsection{Contexto general}
+
+El glaucoma constituye la principal causa irreversible de ceguera a nivel mundial, afectando a más de 80 millones de personas.
+Su detección temprana mediante el análisis de imágenes de fondo de ojo (fundus photography) representa una de las aplicaciones más prometedoras de la inteligencia artificial en salud.
+Sin embargo, los modelos de deep learning tradicionales, aunque alcanzan alta accuracy en benchmarks controlados, frecuentemente exhiben predicciones de \textbf{alta confianza en casos erróneos} (\textit{overconfident errors}), lo que los hace inseguros para despliegue clínico.
+
+\subsection{El problema de la incertidumbre en modelos médicos}
+
+La estimación de incertidumbre (\UQ, \textit{Uncertainty Quantification}) en modelos de visión-lenguaje médicos (\MedVLM s) enfrenta desafíos únicos:
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Modality bias:} Los \VLM s clínicos frecuentemente favorecen priores lingüísticos sobre evidencia visual, generando predicciones plausibles pero alucinadas \citep{modalitybias2025}.
+    
+    \item \textbf{Costo computacional:} Métodos como MC-Dropout requieren 25--100 pasadas por imagen, y los deep ensembles requieren múltiples modelos en memoria \citep{gal2016dropout, lakshminarayanan2017ensembles}.
+    
+    \item \textbf{Limitaciones de baselines baratos:} La entropía predictiva y el Maximum Softmax Probability (MSP) solo miran la salida textual, sin detectar cuando el modelo \textit{alucina} ignorando la imagen.
+\end{itemize}
+
+\subsection{Motivación bio-inspirada}
+
+El cerebro humano detecta conflictos entre modalidades sensoriales como señal de alerta.
+El \textbf{efecto McGurk} demuestra que cuando la información visual (movimientos labiales) y auditiva (sonido) discrepan, el cerebro registra el conflicto \citep{mcgurk1976}.
+Esta detección de conflictos cross-modal es un principio neurocientífico bien establecido que motiva nuestra aproximación computacional.
+
+\subsection{Propuesta}
+
+Proponemos medir la divergencia KL entre las representaciones internas visuales y textuales de MedGemma 4B en una \textbf{única pasada forward}.
+Nuestra hipótesis central es:
+
+\begin{quote}
+\textbf{H1:} Cuando el modelo se equivoca al diagnosticar glaucoma, su desacuerdo interno $u(x) = \KL(p_{\text{vis}} \| p_{\text{text}})$ es significativamente mayor que cuando acierta.
+\end{quote}
+
+Adicionalmente, investigamos una hipótesis secundaria:
+
+\begin{quote}
+\textbf{H4:} En casos patológicos, existe correlación entre la severidad del daño (medida por cup-to-disc ratio) y la magnitud de la señal de incertidumbre.
+\end{quote}
+
+% ============================================================
+\section{Estado del Arte y Análisis de la Literatura}
+% ============================================================
+
+\subsection{Vision-Language Models en oftalmología}
+
+Los modelos fundacionales multimodales han revolucionado el análisis de imágenes médicas.
+En oftalmología, destacan:
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{EyeCLIP} \citep{shietal2025eyeclip}: Modelo visual-lenguaje multimodal específico para oftalmología computacional.
+    
+    \item \textbf{RetiZero} \citep{retizero2024}: Identificación de enfermedades comunes y raras del fondo de ojo usando modelos fundacionales VLM con conocimiento de más de 400 enfermedades.
+    
+    \item \textbf{VOLMO} \citep{volmo2026}: Modelos versátiles y abiertos para oftalmología.
+    
+    \item \textbf{MedGemma} \citep{sellergren2025medgemma}: Familia de modelos fundacionales médicos de Google, con variantes de 4B parámetros especializadas en visión-lenguaje médico.
+\end{itemize}
+
+MedGemma-4B alcanza un F1 de aproximadamente 63.7\% en glaucoma \citep{volmo2026}, lo que lo hace un clasificador base modesto pero ideal para evaluar \UQ: genera abundantes errores con los que validar la señal de incertidumbre.
+
+\subsection{Métodos de estimación de incertidumbre}
+
+\subsubsection{Métodos multi-pass (costosos)}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{MC-Dropout} \citep{gal2016dropout}: Múltiples inferencias con dropout activo.
+    Requiere 25--100 pasadas.
+    
+    \item \textbf{Deep Ensembles} \citep{lakshminarayanan2017ensembles}: Múltiples modelos entrenados con diferentes inicializaciones.
+    Requiere 5--10 modelos en memoria.
+    
+    \item \textbf{Semantic Entropy} \citep{kuhn2023semantic}: Múltiples generaciones muestreadas + modelo NLI externo para agrupar respuestas semánticamente equivalentes.
+    Requiere 10+ generaciones.
+\end{itemize}
+
+\subsubsection{Métodos single-pass}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Maximum Softmax Probability (MSP)} \citep{hendrycks2017baseline}: La máxima probabilidad de la distribución de salida.
+    
+    \item \textbf{Entropía predictiva}: La entropía de la distribución de salida sobre el vocabulario.
+    
+    \item \textbf{Energy Score} \citep{liu2020energy}: Basado en la función de energía de la distribución de salida.
+    
+    \item \textbf{Mahalanobis Distance} \citep{lee2018mahalanobis}: Distancia en el espacio de features respecto a la distribución de clases.
+\end{itemize}
+
+\subsubsection{Métodos basados en features internas}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{SAPLMA} \citep{azaria2023internal}: MLP sobre hidden states para predecir veracidad.
+    Requiere entrenar un probe con datos etiquetados.
+    
+    \item \textbf{``Between the Layers Lies the Truth''} \citep{badash2026between}: Convierte activaciones post-MLP de cada capa en distribuciones vía softmax temperado y computa matriz de divergencias KL pairwise entre capas.
+    Entrena un clasificador LightGBM sobre la ``signature map'' aplanada.
+    AUPRC $\sim$0.82 bajo cuantización 4-bit.
+\end{itemize}
+
+\subsection{Métodos cross-modal de incertidumbre}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{VLM-UQBench} \citep{vlmuqbench2026}: Benchmark de 600 muestras evaluando 9 métodos de incertidumbre visual, textual y cross-modal.
+    
+    \item \textbf{UMPIRE} \citep{umpire2026}: Framework training-free usando incoherence-adjusted semantic volume con DPPs.
+    Es multi-sample, no single-pass.
+    
+    \item \textbf{VIG-TUQ} \citep{vigtuq2026}: Visual-Grounded Token Uncertainty.
+    Usa Jensen-Shannon entre predicciones con/sin imagen + attention weights.
+    \textbf{Nota crítica:} su score JSD requiere un segundo forward \textit{sin} imagen; solo su score de atención es single-pass.
+    
+    \item \textbf{Expert-CFG} \citep{liang2025uncertainty}: Usa entropía predictiva para detectar respuestas no confiables en MedVLMs, luego aplica classifier-free guidance con anotaciones expertas.
+    AUC $>$ 0.8 en VQA-RAD/SLAKE.
+\end{itemize}
+
+\subsection{El ``punto dulce'' metodológico}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    axis/.style={->,>=stealth,thick},
+    node distance=1.2cm,
+    box/.style={draw, rounded corners, minimum width=3cm, minimum height=0.8cm, align=center, font=\small}
+]
+% Ejes
+\draw[axis] (0,0) -- (5,0) node[right] {\small Costo computacional};
+\draw[axis] (0,0) -- (0,4) node[above] {\small Información cross-modal};
+\draw[axis] (0,0) -- (-3,-2) node[below left] {\small Features internas};
+
+% Métodos
+\node[box, fill=red!15] at (4,0.5) {MSP/Entropy};
+\node[box, fill=red!15] at (4,1.5) {Energy/Mahalanobis};
+\node[box, fill=orange!20] at (1,3) {Semantic Entropy};
+\node[box, fill=orange!20] at (2,3.5) {MC-Dropout};
+\node[box, fill=green!20] at (-1.5,2) {SAPLMA};
+\node[box, fill=green!30, very thick] at (-1,1) {\textbf{KL Cross-Modal}};
+\node[box, fill=blue!15] at (-2,3) {Between the Layers};
+
+% Leyenda
+\node[draw, rounded corners, fill=green!10, font=\footnotesize, align=left] at (3,-1.5) {
+    \textbf{Nuestra contribución}\\
+    Single-pass + Feature-based + Cross-modal
+};
+\end{tikzpicture}
+\caption{Espacio metodológico de métodos de \UQ.
+Ningún método existente combina las tres propiedades simultáneamente.
+Nuestra contribución (KL Cross-Modal) ocupa el octante vacío.}
+\label{fig:espacio-metodologico}
+\end{figure}
+
+Como se ilustra en la \Cref{fig:espacio-metodologico}, \textbf{ningún método publicado combina las tres propiedades} de ser single-pass, basado en features internas y cross-modal.
+Esta es la novedad metodológica central de nuestra propuesta.
+
+% ============================================================
+\section{Método Propio}
+% ============================================================
+
+\subsection{Intuición}
+
+Cuando un modelo de visión-lenguaje ``ve'' algo en la imagen pero ``dice'' otra cosa en su respuesta, ese desacuerdo interno se puede medir con un número.
+Ese número nos dice cuándo el modelo está a punto de equivocarse, sin necesidad de saber la respuesta correcta.
+
+La analogía es la del cerebro humano: si los ojos ven a una persona decir ``ga'' pero los oídos oyen ``ba'', el cerebro detecta el \textbf{conflicto entre sentidos} y se pone en alerta.
+Nosotros construimos el equivalente computacional: medimos el desacuerdo entre la representación interna de la imagen y la representación interna de la respuesta del modelo, con la divergencia de Kullback-Leibler (\KL).
+
+\subsection{Arquitectura del modelo base}
+
+Utilizamos \texttt{google/medgemma-4b-it} \citep{sellergren2025medgemma}, un modelo de visión-lenguaje médico con la siguiente arquitectura:
+
+\begin{table}[H]
+\centering
+\caption{Especificaciones de MedGemma 4B}
+\label{tab:medgemma-specs}
+\begin{tabular}{ll}
+\toprule
+\textbf{Componente} & \textbf{Especificación} \\
+\midrule
+Parámetros totales & $\sim$4B \\
+Vision encoder & MedSigLIP (SigLIP-400M fine-tuned médico) \\
+Capas vision encoder & 27 \\
+Hidden size vision & 1152 \\
+Decoder & Gemma 3, 34 capas transformer \\
+Hidden size decoder & 2560 \\
+Vocabulario & 262,144 tokens \\
+Input resolution & 896$\times$896 \\
+Patch size & 14$\times$14 \\
+Tokens visuales & 256 (tras pooling 4$\times$4) \\
+VRAM (bfloat16) & $\sim$10--12 GB \\
+VRAM (4-bit NF4) & $\sim$4--5 GB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Extracción de representaciones}
+
+\subsubsection{Tokens visuales}
+
+La imagen se procesa mediante el vision encoder MedSigLIP:
+
+\begin{enumerate}
+    \item Resize a 896$\times$896 píxeles (realizado por el procesador del modelo).
+    \item División en parches de 14$\times$14: $896/14 = 64$ parches por lado $\rightarrow$ $64 \times 64 = 4{,}096$ parches.
+    \item Cada parche pasa por la torre de visión (SigLIP) y sale como vector de 1,152 dimensiones.
+    \item Pooling 4$\times$4 agrupa parches vecinos: $4{,}096 / 16 = 256$ vectores.
+    \item Proyección a 2,560 dimensiones (hidden size del decoder).
+\end{enumerate}
+
+Los 256 tokens visuales se insertan en la secuencia del decoder como si fueran 256 palabras adicionales, identificables por el token especial \texttt{<image\_soft\_token>} (ID 262,144).
+
+\subsubsection{Hidden states}
+
+El decoder es una pila de 34 capas transformer idénticas.
+Al pedir \texttt{output\_hidden\_states=True}, \texttt{generate()} devuelve una tupla con 35 entradas por paso de generación:
+
+\begin{itemize}
+    \item Índice 0: embeddings de entrada (no usados en la KL).
+    \item Índices 1--34: salidas de las 34 capas.
+\end{itemize}
+
+Con \texttt{max\_new\_tokens=1}, solo existe el prefill (\texttt{hidden\_states[0]}).
+El estado que condiciona la respuesta es la \textbf{última posición del prefill}: \texttt{hidden\_states[0][capa][:, -1, :]}.
+
+\subsubsection{Tres ingredientes por imagen}
+
+\begin{table}[H]
+\centering
+\caption{Ingredientes extraídos en una sola pasada}
+\label{tab:ingredientes}
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Variable} & \textbf{Descripción} & \textbf{Origen exacto} \\
+\midrule
+$p_{\text{vis}}$ & Resumen de ``lo que el modelo vio'' & 256 hidden states de tokens de imagen (máscara por ID 262,144), mean-pooling \\
+$p_{\text{text}}$ & ``Lo que el modelo está a punto de decir'' & Hidden state de la última posición del prefill \\
+$p_{\text{yes}}$, $p_{\text{no}}$ & La respuesta concreta & Logits de ``yes'' (ID 4443) y ``no'' (ID 1904) en \texttt{scores[0]} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{De vector a distribución: softmax temperado}
+
+La \KL\ compara distribuciones de probabilidad.
+Convertimos los vectores de hidden states en distribuciones mediante softmax temperado:
+
+\begin{equation}
+p_i = \frac{\exp(z_i / \tau)}{\sum_j \exp(z_j / \tau)}
+\end{equation}
+
+donde $\tau$ es la temperatura.
+Los hidden states de Gemma tienen componentes de magnitud $10^2$--$10^3$ (\textit{massive activations}).
+Con $\tau = 1$, el softmax en float32 colapsa 2,559 de 2,560 componentes a exactamente 0, produciendo $\KL = \infty$.
+Por ello, computamos \texttt{log\_softmax} en \textbf{float64}, lo que garantiza valores finitos y $\KL(p \| p) = 0$ exacto.
+
+\subsection{Divergencia KL}
+
+La divergencia de Kullback-Leibler se define como:
+
+\begin{equation}
+\KL(p \| q) = \sum_i p_i \cdot \ln\left(\frac{p_i}{q_i}\right)
+\end{equation}
+
+\textbf{Propiedades relevantes:}
+
+\begin{itemize}
+    \item $\KL(p \| q) \geq 0$, con igualdad solo si $p = q$.
+    \item \textbf{Asimétrica:} $\KL(p \| q) \neq \KL(q \| p)$.
+    Esta asimetría es una \textit{feature}: cada dirección pregunta algo distinto.
+    \item No está acotada superiormente (puede valer hasta infinito).
+\end{itemize}
+
+Computamos tres variantes:
+
+\begin{align}
+u_{\text{vis}\rightarrow\text{text}}(x) &= \KL(p_{\text{vis}} \| p_{\text{text}}) \\
+u_{\text{text}\rightarrow\text{vis}}(x) &= \KL(p_{\text{text}} \| p_{\text{vis}}) \\
+u_{\text{JSD}}(x) &= \frac{1}{2}\KL\left(p_{\text{vis}} \Big\| \frac{p_{\text{vis}} + p_{\text{text}}}{2}\right) + \frac{1}{2}\KL\left(p_{\text{text}} \Big\| \frac{p_{\text{vis}} + p_{\text{text}}}{2}\right)
+\end{align}
+
+\subsection{Interpretación direccional}
+
+La asimetría de la \KL\ proporciona diagnóstico estructural del modo de fallo:
+
+\begin{table}[H]
+\centering
+\caption{Interpretación de las direcciones de \KL}
+\label{tab:interpretacion-kl}
+\begin{tabularx}{\textwidth}{XX}
+\toprule
+\textbf{Señal} & \textbf{Interpretación clínica} \\
+\midrule
+$\KL(\text{vis} \| \text{text})$ alta & El texto ignora la imagen: \textit{language prior bias}, alucinación textual \\
+$\KL(\text{text} \| \text{vis})$ alta & La imagen contiene hallazgos atípicos no capturados por el vocabulario \\
+Ambas altas & Ambigüedad clínica intrínseca (caso genuinamente difícil) \\
+Ambas bajas & Acuerdo confidente (caso típico, bien representado) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Algoritmo completo}
+
+\begin{algorithm}[H]
+\caption{Pipeline de extracción de señal de incertidumbre}
+\label{alg:pipeline}
+\begin{algorithmic}[1]
+\Require Imagen de fondo de ojo $x$, prompt $p$, modelo MedGemma $M$
+\Ensure Señal de incertidumbre $u(x)$, predicción $\hat{y}$, probabilidad $P(\text{yes})$
+\State Procesar $x$ a 896$\times$896 vía \texttt{AutoProcessor}
+\State Armar secuencia con chat template: imagen + prompt $p$
+\State $\text{outputs} \gets M.\text{generate}(\text{max\_new\_tokens}=1, \text{output\_hidden\_states}=\text{True}, \text{output\_scores}=\text{True})$
+\State Extraer \texttt{scores[0]}: logit\_yes, logit\_no
+\State $P(\text{yes}) \gets \frac{\exp(\text{logit\_yes})}{\exp(\text{logit\_yes}) + \exp(\text{logit\_no})}$
+\State $\hat{y} \gets \mathbb{1}[P(\text{yes}) > 0.5]$
+\For{capa $\ell \in \{17, 26, 34\}$}
+    \State $h_{\text{prefill}} \gets \text{outputs}.\text{hidden\_states}[0][\ell]$  \Comment{35 entradas, índice 0 = embeddings}
+    \State $\text{mask} \gets (\text{input\_ids} == 262144)$  \Comment{256 tokens de imagen}
+    \State $p_{\text{vis}} \gets \text{mean\_pool}(h_{\text{prefill}}[\text{mask}])$
+    \State $p_{\text{text}} \gets h_{\text{prefill}}[:, -1, :]$  \Comment{última posición del prefill}
+    \For{$\tau \in \{1, 2, 4\}$}
+        \State $P_{\text{vis}} \gets \text{softmax}(p_{\text{vis}} / \tau)$  \Comment{en float64}
+        \State $P_{\text{text}} \gets \text{softmax}(p_{\text{text}} / \tau)$  \Comment{en float64}
+        \State Guardar $\KL(P_{\text{vis}} \| P_{\text{text}})$, $\KL(P_{\text{text}} \| P_{\text{vis}})$, $\JSD(P_{\text{vis}}, P_{\text{text}})$
+    \EndFor
+\EndFor
+\State Guardar fila CSV con 54 variantes + logits + predicción
+\end{algorithmic}
+\end{algorithm}
+
+% ============================================================
+\section{Diseño Experimental}
+% ============================================================
+
+\subsection{Dataset}
+
+Utilizamos MM-ODIR-129 \citep{mmodir129}, un dataset de 129 fotografías de fondo de ojo completas (resolución variable), originarias de ODIR-5K y re-anotadas por oftalmólogos de Costa Rica.
+
+\begin{table}[H]
+\centering
+\caption{Composición del dataset MM-ODIR-129}
+\label{tab:dataset}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Split} & \textbf{Normal} & \textbf{Patológico (Glaucoma)} & \textbf{Total} \\
+\midrule
+Train & 36 & 41 & 77 \\
+Validation & 12 & 14 & 26 \\
+Test & 12 & 14 & 26 \\
+\midrule
+\textbf{Total} & \textbf{60} & \textbf{69} & \textbf{129} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Cada imagen patológica incluye 7 gradings ordinales de glaucoma, incluyendo \texttt{cup\_to\_disc\_ratio} (ordinal 0--4), que utilizamos para la hipótesis H4.
+Las imágenes patológicas cuentan con máscaras de copa y disco óptico (PNG + NPY), reservadas para trabajo futuro.
+
+\subsection{Prompts}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{P1 (principal):} ``Does this fundus image show glaucoma? Answer yes or no.''
+    
+    \item \textbf{P4 (contraste):} system prompt ``You are an expert ophthalmologist.'' + la misma pregunta.
+\end{itemize}
+
+\subsection{Baselines}
+
+Comparamos nuestra señal contra los siguientes métodos:
+
+\begin{table}[H]
+\centering
+\caption{Baselines de comparación}
+\label{tab:baselines}
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Método} & \textbf{Descripción} & \textbf{Costo} \\
+\midrule
+MSP & Maximum Softmax Probability sobre la respuesta & Single-pass \\
+Entropía & Entropía de la distribución yes/no & Single-pass \\
+TS + Entropía & Temperature Scaling ajustado en train, luego entropía & Single-pass \\
+Energy Score & Score de energía de \citet{liu2020energy} & Single-pass \\
+Mahalanobis & Distancia de Mahalanobis en espacio de features & Single-pass \\
+Self-Consistency & 10 muestras a $T=0.7$, entropía de la fracción de ``yes'' & Multi-pass (10$\times$) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Métricas}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{\AUROC} (primaria): Probabilidad de que un error tenga mayor $u(x)$ que un acierto.
+    
+    \item \textbf{\AUPRC} (secundaria): Precision-recall curve para detección de errores.
+    
+    \item \textbf{Brier Score}: Calibración probabilística de $P(\text{yes})$.
+    
+    \item \textbf{\ECE}: Expected Calibration Error.
+    
+    \item \textbf{Sensitivity@80\%Specificity}: Umbral clínico operativo.
+    
+    \item \textbf{Accuracy vs.~Coverage}: Curva de clasificación selectiva.
+\end{itemize}
+
+\subsection{Análisis estadístico}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Mann-Whitney U}: ¿Los errores tienen sistemáticamente mayor $u(x)$ que los aciertos?
+    Reportamos effect size $r = |Z| / \sqrt{N}$ (convención de Fritz et al., 2012).
+    
+    \item \textbf{Bootstrap BCa}: Intervalos de confianza del 95\% para \AUROC\ y \AUPRC\ con 9,999 remuestreos.
+    BCa corrige sesgo y asimetría, crítico con $N=129$.
+    
+    \item \textbf{DeLong's test} (exploratorio): Comparación significativa de curvas \AUROC\ contra el mejor baseline.
+    
+    \item \textbf{Spearman + permutación} (H4): Correlación entre $u(x)$ y \texttt{cup\_to\_disc\_ratio} en los 69 patológicos.
+    El p-value por permutación (9,999 barajadas) es exacto sin asumir normalidad.
+\end{itemize}
+
+\subsection{Variantes y ablaciones}
+
+Por imagen computamos \textbf{54 variantes} en una sola pasada:
+
+\begin{equation}
+3 \text{ divergencias} \times 3 \text{ capas} \times 3 \text{ temperaturas} \times 2 \text{ poolings} = 54 \text{ variantes}
+\end{equation}
+
+La variante reportada se selecciona \textbf{exclusivamente en el split de entrenamiento} (77 imágenes) para evitar contaminación estadística.
+Todo lo reportado en test usa esa variante congelada.
+
+\subsection{Reproducibilidad}
+
+\begin{itemize}[leftmargin=2em]
+    \item Seeds fijadas: 42 para random, numpy, torch.
+    \item \texttt{torch.backends.cudnn.deterministic = True}.
+    \item \texttt{CUBLAS\_WORKSPACE\_CONFIG=:4096:8}.
+    \item Greedy decoding (determinista) para la pasada principal.
+    \item Transformers $\geq$ 4.51.3 (obligatorio para API de hidden states).
+    \item Repositorio anónimo en \texttt{anonymous.4open.science} para double-blind review.
+\end{itemize}
+
+% ============================================================
+\section{Resultados Esperados y Discusión}
+% ============================================================
+
+\subsection{Criterios de éxito}
+
+Definimos tres escenarios posibles según el \AUROC\ de detección de errores:
+
+\begin{table}[H]
+\centering
+\caption{Escenarios de resultado y su interpretación}
+\label{tab:escenarios}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+\textbf{Escenario} & \textbf{Lectura} & \textbf{Consecuencia} \\
+\midrule
+\AUROC $\geq$ 0.70, significativo & Éxito pleno & Paper fuerte: señal útil, barata y novedosa \\
+\AUROC 0.60--0.70 & Éxito parcial & Publicable en BIP: comparable a baselines baratos a costo mínimo \\
+\AUROC $\approx$ 0.5 & Resultado negativo & Plan B: análisis de \textit{por qué} no funciona + estudio de limitaciones \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Costo computacional}
+
+\begin{table}[H]
+\centering
+\caption{Comparación de costos computacionales por imagen (GPU 16GB)}
+\label{tab:costos}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Método} & \textbf{Passes} & \textbf{VRAM} & \textbf{Tiempo} & \textbf{Training} \\
+\midrule
+MC-Dropout (25) & 25 & 16 GB & $\sim$60 s & No \\
+Semantic Entropy (10) & 10+NLI & 16 GB+ & $\sim$30 s & No \\
+Deep Ensemble (5) & 5 & 80 GB & $\sim$12 s & Sí (5$\times$) \\
+SAPLMA Probe & 1 & 16 GB & $\sim$2 s & Sí (probe) \\
+\midrule
+\textbf{KL Cross-Modal} & \textbf{1} & \textbf{4--5 GB} & \textbf{$\sim$2 s} & \textbf{No} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+El costo computacional mínimo hace el método viable para deployment en el Global South (hospitales rurales, Latinoamérica), donde los recursos son limitados.
+
+\subsection{Implicaciones clínicas}
+
+La señal KL cross-modal habilita un sistema de \textbf{triage automatizado}:
+
+\begin{enumerate}
+    \item El modelo diagnostica glaucoma y emite $P(\text{yes})$.
+    \item Simultáneamente, computa $u(x) = \KL(p_{\text{vis}} \| p_{\text{text}})$.
+    \item Si $u(x)$ excede un umbral, el caso se deriva automáticamente a revisión humana.
+    \item Esto enriquece el sistema \texttt{ophthalmo\_capture} con una capa de confiabilidad.
+\end{enumerate}
+
+\subsection{Conexión con los pilares de la tesis}
+
+\subsubsection{UQ $\rightarrow$ XAI: La incertidumbre como explicación nativa}
+
+La magnitud y dirección de la \KL\ son inherentemente explicativas.
+A diferencia de Grad-CAM o SHAP (métodos \textit{post-hoc} que requieren cálculos adicionales), la \KL\ es una medida \textit{native} de la arquitectura VLM.
+No se explica \textit{qué} predice el modelo, sino \textit{por qué} el modelo no está seguro.
+
+\subsubsection{UQ $\rightarrow$ Few-Shot: La incertidumbre como curador de datos}
+
+En few-shot, 10 ejemplos con alta \KL\ son peores que 5 ejemplos con baja \KL.
+La \KL\ puede funcionar como \textbf{curador de support sets}: seleccionar ejemplos que maximicen la coherencia cross-modal.
+
+\subsubsection{UQ $\rightarrow$ Segmentación: La incertidumbre como mapa de riesgo espacial}
+
+La \KL\ global puede descomponerse en contribuciones locales mediante técnicas de \textit{attention attribution}, generando un \textbf{mapa de riesgo espacial} donde las regiones de alta contribución a la \KL\ son precisamente las regiones anatómicas ambiguas.
+
+% ============================================================
+\section{Conclusiones}
+% ============================================================
+
+\subsection{Síntesis}
+
+Este informe presentó la propuesta de investigación para BIP 2026: una señal de incertidumbre \textit{lightweight} basada en la divergencia \KL\ cross-modal en MedGemma 4B para detección de glaucoma.
+Las contribuciones principales son:
+
+\begin{enumerate}
+    \item \textbf{Novedad metodológica:} Primer método que combina single-pass + feature-based + cross-modal para \UQ\ en \MedVLM s oftalmológicos.
+    
+    \item \textbf{Justificación bio-inspirada:} Formalización computacional del principio neurocientífico de detección de conflictos cross-modal.
+    
+    \item \textbf{Interpretabilidad direccional:} La asimetría de \KL\ diagnostica el \textit{modo de fallo} (language prior bias vs.~ambigüedad visual vs.~ambigüedad clínica).
+    
+    \item \textbf{Escalabilidad:} 1 pasada, 4--5 GB VRAM, $\sim$2 segundos por imagen: viable para despliegue en recursos limitados.
+\end{enumerate}
+
+\subsection{Trabajo futuro}
+
+\begin{enumerate}
+    \item \textbf{Calibración:} Transformar \KL\ en probabilidad predictiva calibrada (\ECE).
+    
+    \item \textbf{Triage adaptativo:} Activar MC-Dropout solo cuando $\KL$ es alta, reduciendo costo promedio.
+    
+    \item \textbf{Segmentación text-guided:} Extender la señal \KL\ a segmentación OD/OC con prompts descriptivos.
+    
+    \item \textbf{Few-shot con filtrado KL:} Desarrollar algoritmo de selección de support sets basado en coherencia cross-modal.
+    
+    \item \textbf{Validación clínica prospectiva:} Evaluación en cohorte real con métricas de human-AI interaction.
+    
+    \item \textbf{Generalización cross-dataset:} Validar en REFUGE, RIM-ONE y PAPILA.
+\end{enumerate}
+
+% ============================================================
+\section*{Agradecimientos}
+% ============================================================
+
+Este trabajo se enmarca dentro del proyecto de doctorado en Inteligencia Artificial Aplicada a Oftalmología del Instituto Tecnológico de Costa Rica, bajo la tutoría del Dr.~Saúl Calderón Ramírez.
+Agradecemos a los oftalmólogos que contribuyeron con las anotaciones del dataset MM-ODIR-129.
+
+% ============================================================
+% REFERENCIAS
+% ============================================================
+\newpage
+\bibliographystyle{apalike}
+\begin{thebibliography}{99}
+
+\bibitem[Azaria y Mitchell, 2023]{azaria2023internal}
+Azaria, A. y Mitchell, T. (2023).
+The internal state of an LLM knows when its lying.
+\emph{Findings of EMNLP}, 967--976.
+
+\bibitem[Badash et~al., 2026]{badash2026between}
+Badash, Z.~N., Belinkov, Y., y Freiman, M. (2026).
+Between the layers lies the truth: Compact, per-instance uncertainty via cross-layer agreement.
+\emph{arXiv preprint arXiv:2603.22299}.
+
+\bibitem[Botvinick et~al., 2001]{botvinick2001conflict}
+Botvinick, M.~M., Braver, T.~S., Barch, D.~M., Carter, C.~S., y Cohen, J.~D. (2001).
+Conflict monitoring and cognitive control.
+\emph{Psychological Review}, 108(3), 624--652.
+
+\bibitem[Ernst y B\"ulthoff, 2004]{ernst2004integration}
+Ernst, M.~O. y B\"ulthoff, H.~H. (2004).
+Merging the senses into a robust percept.
+\emph{Trends in Cognitive Sciences}, 8(4), 162--169.
+
+\bibitem[Gal y Ghahramani, 2016]{gal2016dropout}
+Gal, Y. y Ghahramani, Z. (2016).
+Dropout as a bayesian approximation: Representing model uncertainty in deep learning.
+\emph{ICML}, 1050--1059.
+
+\bibitem[Hendrycks y Gimpel, 2017]{hendrycks2017baseline}
+Hendrycks, D. y Gimpel, K. (2017).
+A baseline for detecting misclassified and out-of-distribution examples in neural networks.
+\emph{ICLR}.
+
+\bibitem[Kuhn et~al., 2023]{kuhn2023semantic}
+Kuhn, L., Gal, Y., y Farquhar, S. (2023).
+Semantic uncertainty: Linguistic invariances for uncertainty estimation in natural language generation.
+\emph{ICLR}.
+
+\bibitem[Lakshminarayanan et~al., 2017]{lakshminarayanan2017ensembles}
+Lakshminarayanan, B., Pritzel, A., y Blundell, C. (2017).
+Simple and scalable predictive uncertainty estimation using deep ensembles.
+\emph{NeurIPS}, 30.
+
+\bibitem[Lee et~al., 2018]{lee2018mahalanobis}
+Lee, K., Lee, H., Lee, K., y Shin, J. (2018).
+Training confidence-calibrated classifiers for detecting out-of-distribution samples.
+\emph{ICLR}.
+
+\bibitem[Liang et~al., 2025]{liang2025uncertainty}
+Liang, X., Zhang, Y., et~al. (2025).
+Uncertainty-driven expert control: Enhancing the reliability of medical vision-language models.
+\emph{ICCV}.
+
+\bibitem[Liu et~al., 2020]{liu2020energy}
+Liu, W., Wang, X., Owens, J., y Li, Y. (2020).
+Energy-based out-of-distribution detection.
+\emph{NeurIPS}, 33, 21464--21475.
+
+\bibitem[McDermott et~al., 2024]{mcdermott2024auroc}
+McDermott, J., Wang, S., et~al. (2024).
+A closer look at \AUROC\ and \AUPRC\ under class imbalance.
+\emph{NeurIPS}, 37, 44102--44163.
+
+\bibitem[McGurk y MacDonald, 1976]{mcgurk1976}
+McGurk, H. y MacDonald, J. (1976).
+Hearing lips and seeing voices.
+\emph{Nature}, 264, 746--748.
+
+\bibitem[Saito y Rehmsmeier, 2015]{saito2015precision}
+Saito, T. y Rehmsmeier, M. (2015).
+The precision-recall plot is more informative than the ROC plot when evaluating binary classifiers on imbalanced datasets.
+\emph{PLOS ONE}.
+
+\bibitem[Sellergren et~al., 2025]{sellergren2025medgemma}
+Sellergren, A., Azizi, S., et~al. (2025).
+MedGemma: Technical report.
+\emph{arXiv preprint arXiv:2507.05201}.
+
+\bibitem[Shi et~al., 2025]{shietal2025eyeclip}
+Shi, D., et~al. (2025).
+EyeCLIP: A multimodal visual-language foundation model for computational ophthalmology.
+\emph{Nature Medicine / arXiv:2409.06644}.
+
+\bibitem[Yeung et~al., 2004]{yeung2004conflict}
+Yeung, N., Botvinick, M.~M., y Cohen, J.~D. (2004).
+The neural basis of error detection: Conflict monitoring and the error-related negativity.
+\emph{Psychological Review}, 111(4), 931--959.
+
+\bibitem[Modality Bias, 2025]{modalitybias2025}
+(2025).
+Clinical decision-making relies on the integrated analysis of medical images and associated textual information.
+\emph{arXiv:2508.00171}.
+
+\bibitem[VLM-UQBench, 2026]{vlmuqbench2026}
+(2026).
+VLM-UQBench: A benchmark for uncertainty quantification in vision-language models.
+\emph{arXiv:2602.09214}.
+
+\bibitem[UMPIRE, 2026]{umpire2026}
+(2026).
+UMPIRE: Uncertainty estimation via multimodal perturbation and inconsistency-aware representation.
+\emph{arXiv:2602.24195}.
+
+\bibitem[VIG-TUQ, 2026]{vigtuq2026}
+(2026).
+Visual-grounded token uncertainty quantification for vision-language models.
+\emph{arXiv:2605.27136}.
+
+\bibitem[MM-ODIR-129, 2026]{mmodir129}
+(2026).
+MM-ODIR-129: A curated dataset for glaucoma detection in fundus images.
+\emph{HuggingFace Datasets}.
+
+\bibitem[VOLMO, 2026]{volmo2026}
+(2026).
+VOLMO: Versatile and open large models for ophthalmology.
+\emph{arXiv:2603.23953}.
+
+\bibitem[RetiZero, 2024]{retizero2024}
+(2024).
+RetiZero: Common and rare fundus diseases identification using vision-language foundation model.
+\emph{arXiv:2406.09317}.
+
+\end{thebibliography}
+
+\end{document}

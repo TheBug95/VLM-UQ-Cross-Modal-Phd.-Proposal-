@@ -1,0 +1,36 @@
+# Requisitos mínimos para BIP 2026 — Experimento de incertidumbre en MedGemma-4B
+# Instalación en entorno virtual:
+#   python -m venv .venv
+#   .venv\Scripts\activate        (Windows)
+#   source .venv/bin/activate     (Linux/Mac)
+#   pip install -r requirements.txt
+#
+# Nota: para GPU NVIDIA instalar torch con el índice de CUDA correspondiente, p. ej.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# ---------- Core ML / VLM -----------------------------------------------------
+torch>=2.1.0
+transformers>=4.51.3
+accelerate>=0.25.0              # device_map="auto" y carga eficiente
+huggingface_hub>=0.20.0         # login, snapshot_download, gated repos
+bitsandbytes>=0.43.0 ; platform_system != "Windows"  # NF4 4-bit (Linux/Mac; en Windows es experimental)
+
+# ---------- Dataset y preprocesamiento ----------------------------------------
+datasets>=5.0.0                 # load_dataset("TheBug95/MM-ODIR-129")
+Pillow>=10.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# ---------- Configuración ------------------------------------------------------
+PyYAML>=6.0                     # lectura de config.yaml
+
+# ---------- Estadística, métricas y visualización -----------------------------
+scipy>=1.11.0                   # bootstrap BCa, permutation_test, jensenshannon (Z de Mann-Whitney se calcula manual, ver val_06)
+scikit-learn>=1.7.0             # AUROC, AUPRC, Brier
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# ---------- Opcionales / exploratorios ----------------------------------------
+# Descomenta si vas a usar DeLong en val_06 / evaluation.py:
+# pauc @ git+https://github.com/srijitseal/pauc.git
+# rocauc-comparison>=0.1.0

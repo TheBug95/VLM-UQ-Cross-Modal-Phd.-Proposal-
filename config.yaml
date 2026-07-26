@@ -1,0 +1,81 @@
+# Configuración central del experimento BIP 2026
+# Principio: aquí van los hiperparámetros de diseño. Los valores que dependen del
+# tokenizer/modelo (p. ej. IDs de tokens especiales) se pueden sobreescribir
+# automáticamente desde src/config.py cuando haya acceso a HuggingFace.
+
+experiment:
+  name: "BIP_2026_glaucoma_uncertainty"
+  seed: 42
+
+paths:
+  root: "."
+  data: "data"
+  results: "results"
+  figures: "figures"
+  master_table: "data/master_table.csv"
+  results_full: "results/results_full.csv"
+  results_pilot: "results/results_pilot.csv"
+  artifacts: "results/artifacts"
+
+model:
+  name: "google/medgemma-4b-it"
+  revision: "v1.0.1"              # checkpoint con fix del end-of-image token
+  trust_remote_code: false
+  torch_dtype: "bfloat16"         # "bfloat16" | "float16" | "float32"
+  attn_implementation: "eager"    # "eager" para reproducibilidad numérica
+  device_map: "auto"
+  load_in_4bit: false             # true en Colab T4 / GPUs con < 14 GB
+
+dataset:
+  name: "TheBug95/MM-ODIR-129"
+  splits: ["train", "validation", "test"]
+  label_normal: "Normal"
+  label_pathological: "Pathological"
+  cdr_key: "cup_to_disc_ratio"    # grado ordinal 0-4 para H4
+  image_key: "image"
+
+inference:
+  resolution: 896
+  batch_size: 1
+  max_new_tokens: 1               # 1 = pipeline single-pass principal; 2 = ablación
+  output_hidden_states: true
+  output_scores: true
+  do_sample: false                # greedy decoding para reproducibilidad
+  num_image_tokens: 256           # (896 / 14)^2 / 16; se verifica en runtime
+  layers: [17, 26, 34]            # capas del decoder (1-based), no índices de tupla
+
+prompts:
+  p1:
+    system: null
+    user: "Does this fundus image show glaucoma? Answer yes or no."
+  p4:
+    system: "You are an expert ophthalmologist."
+    user: "Does this fundus image show glaucoma? Answer yes or no."
+  # p5: segundo turno tras la respuesta de p1 (baseline verbalized confidence, 2×) — solo sobre p1
+  p5:
+    system: null
+    user: "How confident are you in your answer? Reply with a number from 0 to 100."
+
+uncertainty:
+  temperatures: [1.0, 2.0, 4.0]
+  pooling: ["mean", "max"]
+  directions: ["v_t", "t_v", "jsd"]
+  epsilon: 1.0e-10
+  primary_signal: "KL_v_t"        # se selecciona en train; placeholder inicial
+
+evaluation:
+  bootstrap_reps: 9999
+  bootstrap_method: "BCa"         # preferido con N pequeño
+  confidence_level: 0.95
+  alpha: 0.05
+  accuracy_coverage_steps: [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+
+# Tokens: valores de fallback. src/config.py intentará sobreescribirlos cargando
+# el tokenizer real. Si no hay acceso, se usan estos.
+tokens:
+  "yes": 4443          # comillas para forzar clave string (YAML parsea yes/no como bool)
+  "no": 1904
+  "image_soft_token": 262144
+  "start_of_image": 255999
+  "end_of_image": 256000
+  "image_token_index": 262144
