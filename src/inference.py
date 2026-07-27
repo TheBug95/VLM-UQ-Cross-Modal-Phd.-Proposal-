@@ -464,11 +464,12 @@ def append_result(cfg: Config, row: dict[str, Any], filename: str = "results_ful
 # ------------------------------------------------------------------------------
 # Piloto con sanity checks
 # ------------------------------------------------------------------------------
-def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False) -> None:
+def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False, seed: int | None = None) -> None:
     """Ejecuta el piloto de n imágenes con sanity checks obligatorios.
 
     Si with_attentions=True, extrae atenciones cruzadas y genera heatmaps
-    de ejemplo para las primeras 3 imágenes.
+    de ejemplo para las primeras 3 imágenes. Si seed se pasa, se añade como
+    columna a los resultados.
     """
     print("=" * 70)
     print("PILOTO — sanity checks obligatorios")
@@ -533,6 +534,8 @@ def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False) -> None:
                 "correct": int(signals["pred"] == row["label"]),
                 "inference_ms": elapsed_ms,
             }
+            if seed is not None:
+                record["seed"] = seed
             results.append(record)
             p_yes_values.append(signals["p_yes"])
 
@@ -595,12 +598,13 @@ def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False) -> None:
 # ------------------------------------------------------------------------------
 # Corrida completa
 # ------------------------------------------------------------------------------
-def run_full(cfg: Config, with_attentions: bool = False) -> None:
+def run_full(cfg: Config, with_attentions: bool = False, seed: int | None = None) -> None:
     """Ejecuta la corrida completa: 129 imágenes × 2 prompts = 258 inferencias.
 
     Si with_attentions=True, extrae atenciones cruzadas y añade columnas
     *_attn (deployable, sin máscaras externas). Usa eager attention, más
-    lento y con más memoria que sdpa.
+    lento y con más memoria que sdpa. Si seed se pasa, se añade como columna
+    a los resultados.
     """
     # Asegurar que el dataset está descargado
     download_dataset(cfg)
@@ -654,6 +658,8 @@ def run_full(cfg: Config, with_attentions: bool = False) -> None:
                 "correct": correct_val,
                 "inference_ms": elapsed_ms,
             }
+            if seed is not None:
+                record["seed"] = seed
             results.append(record)
             print(f"[full] {row['image_filename']} {prompt_id}: p_yes={signals['p_yes']:.3f} correct={record['correct']}")
 
@@ -668,12 +674,17 @@ def run_full(cfg: Config, with_attentions: bool = False) -> None:
 # ------------------------------------------------------------------------------
 # Self-consistency (50 imágenes × 10 muestras)
 # ------------------------------------------------------------------------------
-def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10) -> None:
-    """Ejecuta el baseline multi-pass sobre un subconjunto estratificado."""
+def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10, seed: int | None = None) -> None:
+    """Ejecuta el baseline multi-pass sobre un subconjunto estratificado.
+
+    Si seed se pasa, se usa para la selección del subconjunto y se añade como
+    columna a los resultados.
+    """
     master = pd.read_csv(cfg.paths.master_table)
+    random_state = seed if seed is not None else cfg.experiment.seed
     subset = (
         master.groupby("label", group_keys=False)
-        .apply(lambda x: x.sample(n=min(n_images // 2, len(x)), random_state=cfg.experiment.seed))
+        .apply(lambda x: x.sample(n=min(n_images // 2, len(x)), random_state=random_state))
         .reset_index(drop=True)
     )
 
@@ -696,8 +707,43 @@ def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10) -
                 **signals,
                 "label": int(row["label"]),
             }
+            if seed is not None:
+                record["seed"] = seed
             append_result(cfg, record, filename="results_self_consistency.csv")
             print(f"[sc] {row['image_filename']} {prompt_id}: frac_yes={signals['self_consistency_frac_yes']:.2f}")
+
+
+# ------------------------------------------------------------------------------
+# Repeticiones con múltiples semillas
+# ------------------------------------------------------------------------------
+def run_with_seeds(cfg: Config, seeds: list[int], mode: str, **kwargs) -> None:
+    """Ejecuta la inferencia para cada semilla en la lista.
+
+    Para cada semilla:
+        1. Fija la semilla (random, numpy, torch).
+        2. Ejecuta el modo especificado (pilot, full, self-consistency).
+        3. Guarda los resultados con la semilla como columna.
+
+    Args:
+        cfg: configuración del experimento.
+        seeds: lista de semillas (p. ej. [42, 123, 456]).
+        mode: "pilot", "full" o "self-consistency".
+        **kwargs: argumentos adicionales para la función de corrida.
+    """
+    for seed in seeds:
+        print("\n" + "=" * 70)
+        print(f"CORRIDA CON SEMILLA {seed}")
+        print("=" * 70)
+        cfg.set_seed(seed)
+
+        if mode == "pilot":
+            run_pilot(cfg, seed=seed, **kwargs)
+        elif mode == "full":
+            run_full(cfg, seed=seed, **kwargs)
+        elif mode == "self-consistency":
+            run_self_consistency(cfg, seed=seed, **kwargs)
+        else:
+            raise ValueError(f"Modo desconocido: {mode}")
 
 
 # ------------------------------------------------------------------------------
@@ -711,13 +757,28 @@ def main() -> None:
     parser.add_argument("--n", type=int, default=20, help="Imágenes para el piloto")
     parser.add_argument("--attentions", action="store_true",
                         help="Extraer atenciones cruzadas y generar heatmaps (piloto)")
+    parser.add_argument("--seeds", type=int, nargs="+", default=None,
+                        help="Lista de semillas para repeticiones (p. ej. --seeds 42 123 456)")
     args = parser.parse_args()
 
     cfg = Config()
     cfg.ensure_paths()
-    cfg.set_seed()
     cfg.set_determinism()
 
+    # Si se pasan semillas, ejecutar repeticiones
+    if args.seeds:
+        if args.pilot:
+            run_with_seeds(cfg, args.seeds, mode="pilot", n=args.n, with_attentions=args.attentions)
+        elif args.run_full:
+            run_with_seeds(cfg, args.seeds, mode="full", with_attentions=args.attentions)
+        elif args.self_consistency:
+            run_with_seeds(cfg, args.seeds, mode="self-consistency")
+        else:
+            print("Uso: python -m src.inference [--pilot | --run-full | --self-consistency] --seeds 42 123 456")
+        return
+
+    # Corrida simple (sin semillas)
+    cfg.set_seed()
     if args.pilot:
         run_pilot(cfg, n=args.n, with_attentions=args.attentions)
     elif args.run_full:
@@ -727,6 +788,7 @@ def main() -> None:
     else:
         print("Uso: python -m src.inference [--pilot | --run-full | --self-consistency]")
         print("Ejemplo: python -m src.inference --pilot --n 20")
+        print("Con semillas: python -m src.inference --run-full --seeds 42 123 456")
 
 
 if __name__ == "__main__":

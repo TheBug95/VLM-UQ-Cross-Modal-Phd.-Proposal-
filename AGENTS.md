@@ -219,6 +219,14 @@ python -m src.inference --pilot --n 20
 # Corrida completa (258 inferencias, ~10–20 min de GPU)
 python -m src.inference --run-full
 
+# Corrida completa con atenciones (más lento, eager attention)
+python -m src.inference --run-full --attentions
+
+# Repeticiones con múltiples semillas (resultados con columna seed)
+python -m src.inference --run-full --seeds 42 123 456
+python -m src.inference --pilot --n 20 --seeds 42 123
+python -m src.inference --self-consistency --seeds 42 123
+
 # Self-consistency (50 imágenes × 10 muestras)
 python -m src.inference --self-consistency
 
