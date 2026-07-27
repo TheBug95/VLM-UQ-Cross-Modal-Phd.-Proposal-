@@ -464,12 +464,12 @@ def append_result(cfg: Config, row: dict[str, Any], filename: str = "results_ful
 # ------------------------------------------------------------------------------
 # Piloto con sanity checks
 # ------------------------------------------------------------------------------
-def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False, seed: int | None = None) -> None:
+def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False, seed: int | None = None, save: bool = True) -> pd.DataFrame:
     """Ejecuta el piloto de n imágenes con sanity checks obligatorios.
 
     Si with_attentions=True, extrae atenciones cruzadas y genera heatmaps
     de ejemplo para las primeras 3 imágenes. Si seed se pasa, se añade como
-    columna a los resultados.
+    columna a los resultados. Si save=False, no escribe el CSV y devuelve el DataFrame.
     """
     print("=" * 70)
     print("PILOTO — sanity checks obligatorios")
@@ -583,10 +583,12 @@ def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False, seed: int
 
     # Guardar piloto
     df = pd.DataFrame(results)
-    out_path = Path(cfg.paths.results) / "results_pilot.csv"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out_path, index=False)
-    print(f"\n[pilot] Guardado: {out_path} ({len(df)} filas)")
+    if save:
+        out_path = Path(cfg.paths.results) / "results_pilot.csv"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_path, index=False)
+        print(f"\n[pilot] Guardado: {out_path} ({len(df)} filas)")
+    return df
 
     # Accuracy base (primer número a mirar)
     acc = df["correct"].mean()
@@ -598,13 +600,13 @@ def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False, seed: int
 # ------------------------------------------------------------------------------
 # Corrida completa
 # ------------------------------------------------------------------------------
-def run_full(cfg: Config, with_attentions: bool = False, seed: int | None = None) -> None:
+def run_full(cfg: Config, with_attentions: bool = False, seed: int | None = None, save: bool = True) -> pd.DataFrame:
     """Ejecuta la corrida completa: 129 imágenes × 2 prompts = 258 inferencias.
 
     Si with_attentions=True, extrae atenciones cruzadas y añade columnas
     *_attn (deployable, sin máscaras externas). Usa eager attention, más
     lento y con más memoria que sdpa. Si seed se pasa, se añade como columna
-    a los resultados.
+    a los resultados. Si save=False, no escribe el CSV y devuelve el DataFrame.
     """
     # Asegurar que el dataset está descargado
     download_dataset(cfg)
@@ -665,10 +667,12 @@ def run_full(cfg: Config, with_attentions: bool = False, seed: int | None = None
 
     # Escribir todo al final con un solo to_csv (evita problemas de tipo al append)
     df = pd.DataFrame(results)
-    out_path = Path(cfg.paths.results) / "results_full.csv"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out_path, index=False)
-    print(f"\n[full] Guardado: {out_path} ({len(df)} filas)")
+    if save:
+        out_path = Path(cfg.paths.results) / "results_full.csv"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_path, index=False)
+        print(f"\n[full] Guardado: {out_path} ({len(df)} filas)")
+    return df
 
 
 # ------------------------------------------------------------------------------
@@ -722,7 +726,8 @@ def run_with_seeds(cfg: Config, seeds: list[int], mode: str, **kwargs) -> None:
     Para cada semilla:
         1. Fija la semilla (random, numpy, torch).
         2. Ejecuta el modo especificado (pilot, full, self-consistency).
-        3. Guarda los resultados con la semilla como columna.
+        3. Acumula los resultados con la semilla como columna.
+        4. Al final, guarda un solo CSV con todas las semillas.
 
     Args:
         cfg: configuración del experimento.
@@ -730,6 +735,8 @@ def run_with_seeds(cfg: Config, seeds: list[int], mode: str, **kwargs) -> None:
         mode: "pilot", "full" o "self-consistency".
         **kwargs: argumentos adicionales para la función de corrida.
     """
+    all_results = []
+
     for seed in seeds:
         print("\n" + "=" * 70)
         print(f"CORRIDA CON SEMILLA {seed}")
@@ -737,13 +744,24 @@ def run_with_seeds(cfg: Config, seeds: list[int], mode: str, **kwargs) -> None:
         cfg.set_seed(seed)
 
         if mode == "pilot":
-            run_pilot(cfg, seed=seed, **kwargs)
+            df = run_pilot(cfg, seed=seed, save=False, **kwargs)
+            all_results.append(df)
         elif mode == "full":
-            run_full(cfg, seed=seed, **kwargs)
+            df = run_full(cfg, seed=seed, save=False, **kwargs)
+            all_results.append(df)
         elif mode == "self-consistency":
             run_self_consistency(cfg, seed=seed, **kwargs)
         else:
             raise ValueError(f"Modo desconocido: {mode}")
+
+    # Guardar un solo CSV con todas las semillas (para pilot y full)
+    if all_results:
+        df_all = pd.concat(all_results, ignore_index=True)
+        filename = "results_pilot.csv" if mode == "pilot" else "results_full.csv"
+        out_path = Path(cfg.paths.results) / filename
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df_all.to_csv(out_path, index=False)
+        print(f"\n[seeds] Guardado: {out_path} ({len(df_all)} filas, {len(seeds)} semillas)")
 
 
 # ------------------------------------------------------------------------------
