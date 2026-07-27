@@ -110,7 +110,7 @@ class MedGemmaInference:
     # ------------------------------------------------------------------
     def load(self) -> None:
         """Carga processor y modelo según config.yaml."""
-        from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+        from transformers import BitsAndBytesConfig, Gemma3ForConditionalGeneration, Gemma3Processor
 
         model_name = self.cfg.model.name
         kwargs: dict[str, Any] = {}
@@ -127,8 +127,8 @@ class MedGemmaInference:
         if attn_impl:
             kwargs["attn_implementation"] = attn_impl
 
-        self._processor = AutoProcessor.from_pretrained(model_name)
-        self._model = AutoModelForImageTextToText.from_pretrained(model_name, **kwargs)
+        self._processor = Gemma3Processor.from_pretrained(model_name)
+        self._model = Gemma3ForConditionalGeneration.from_pretrained(model_name, **kwargs)
         self._model.eval()
 
         # Resolver IDs desde el tokenizer real si difieren de config.yaml
