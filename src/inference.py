@@ -56,19 +56,18 @@ BASE_COLUMNS = [
 # ------------------------------------------------------------------------------
 # Utilidades de incertidumbre
 # ------------------------------------------------------------------------------
-def to_distribution(vec: torch.Tensor, tau: float = 1.0) -> torch.Tensor:
+def to_distribution(vec: torch.Tensor, tau: float = 4.0) -> torch.Tensor:
     """Convierte un vector crudo a distribución con F.log_softmax en float64.
 
-    Normaliza por norma L2 antes de softmax para evitar colapso numérico sin
-    aplanar demasiado (a diferencia de z-score, que aplana a casi uniforme).
+    Usa softmax crudo con τ alta (default 4.0) para aplanar la distribución
+    sin normalizar. Esto preserva las diferencias relativas entre hidden states
+    de imagen y texto, permitiendo que la KL varíe entre casos.
+
+    Nota: no normalizamos (ni z-score, ni norma L2) porque ambos aplanan
+    demasiado, haciendo que la KL sea casi cero para todos los casos.
     """
     # Convertir a float32 para evitar overflow/underflow con bfloat16
     vec = vec.float()
-
-    # Normalizar por norma L2 (preserva forma, evita colapso)
-    norm = vec.norm()
-    if norm > 1e-10:
-        vec = vec / norm
 
     log_p = torch.nn.functional.log_softmax(vec / tau, dim=0, dtype=torch.float64)
     return log_p.exp()
