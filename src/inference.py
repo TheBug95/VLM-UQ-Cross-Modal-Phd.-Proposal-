@@ -37,8 +37,10 @@ from src.uncertainty import (
     compute_attention_weights,
     compute_roi_weights,
     generate_attention_heatmap,
+    norm_weighted_pooling,
     roi_weighted_pooling,
     save_attention_heatmap,
+    topk_pooling,
 )
 
 # Columnas de salida (orden congelado por el diseño)
@@ -299,6 +301,30 @@ class MedGemmaInference:
                     results[f"jsd_{suffix}"] = jsd(
                         p_vis_attn.cpu().numpy(), p_text.cpu().numpy()
                     )
+
+            # Ablación Top-K pooling (sin parámetros, deployable)
+            p_vis_topk_vec = topk_pooling(h_img, k=max(1, len(img_positions) // 10))
+            for tau in self.cfg.uncertainty.temperatures:
+                p_vis_topk = to_distribution(p_vis_topk_vec, tau)
+                p_text = to_distribution(p_text_vec, tau)
+                suffix = f"L{layer}_tau{tau}_topk"
+                results[f"kl_v_t_{suffix}"] = kl_div(p_vis_topk, p_text, eps)
+                results[f"kl_t_v_{suffix}"] = kl_div(p_text, p_vis_topk, eps)
+                results[f"jsd_{suffix}"] = jsd(
+                    p_vis_topk.cpu().numpy(), p_text.cpu().numpy()
+                )
+
+            # Ablación Norm-Weighted pooling (sin parámetros, deployable)
+            p_vis_normw_vec = norm_weighted_pooling(h_img)
+            for tau in self.cfg.uncertainty.temperatures:
+                p_vis_normw = to_distribution(p_vis_normw_vec, tau)
+                p_text = to_distribution(p_text_vec, tau)
+                suffix = f"L{layer}_tau{tau}_normw"
+                results[f"kl_v_t_{suffix}"] = kl_div(p_vis_normw, p_text, eps)
+                results[f"kl_t_v_{suffix}"] = kl_div(p_text, p_vis_normw, eps)
+                results[f"jsd_{suffix}"] = jsd(
+                    p_vis_normw.cpu().numpy(), p_text.cpu().numpy()
+                )
 
         return results
 

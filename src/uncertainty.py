@@ -202,6 +202,53 @@ def attention_weighted_pooling(h_img: torch.Tensor, weights: np.ndarray) -> torc
 
 
 # ------------------------------------------------------------------------------
+# Top-K Spatial Pooling (sin parámetros)
+# ------------------------------------------------------------------------------
+def topk_pooling(h_img: torch.Tensor, k: int = 26) -> torch.Tensor:
+    """Selecciona los K tokens con mayor norma L2 y promedia solo esos.
+
+    Descarta el resto (dilución espacial reducida). Si k >= num_tokens, usa
+    mean pooling.
+
+    Args:
+        h_img: tensor (num_tokens, hidden_dim).
+        k: número de tokens a seleccionar (default 26 ≈ 10% de 256).
+
+    Returns:
+        Vector (hidden_dim,) con el promedio de los K tokens más activos.
+    """
+    if k >= h_img.shape[0]:
+        return h_img.float().mean(dim=0)
+
+    # Norma L2 por token
+    norms = h_img.float().norm(dim=1)  # (num_tokens,)
+    # Índices de los K mayores
+    topk_idx = norms.topk(k).indices
+    # Promedio solo esos K
+    return h_img[topk_idx].float().mean(dim=0)
+
+
+# ------------------------------------------------------------------------------
+# Norm-Weighted Pooling (sin parámetros)
+# ------------------------------------------------------------------------------
+def norm_weighted_pooling(h_img: torch.Tensor) -> torch.Tensor:
+    """Pondera cada token por su norma L2 (self-weighting).
+
+    Las regiones de mayor activación dominan el vector resultante.
+
+    Args:
+        h_img: tensor (num_tokens, hidden_dim).
+
+    Returns:
+        Vector (hidden_dim,) con el pooling ponderado por norma.
+    """
+    h_float = h_img.float()
+    norms = h_float.norm(dim=1)  # (num_tokens,)
+    weights = norms / norms.sum()
+    return (h_float * weights.unsqueeze(-1)).sum(dim=0)
+
+
+# ------------------------------------------------------------------------------
 # Heatmap de atención
 # ------------------------------------------------------------------------------
 def generate_attention_heatmap(
