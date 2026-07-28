@@ -329,8 +329,12 @@ class MedGemmaInference:
                 )
 
             # Ablación Attention Rollout (caminos indirectos de información)
+            # NOTA: el rollout termina en la misma capa que los hidden states
+            # para evitar data leak temporal (usar información futura).
             if attentions is not None:
-                rollout_weights = attention_rollout(attentions, img_positions)
+                rollout_weights = attention_rollout(
+                    attentions, img_positions, end_layer=layer
+                )
                 p_vis_rollout_vec = attention_weighted_pooling(h_img, rollout_weights)
                 for tau in self.cfg.uncertainty.temperatures:
                     p_vis_rollout = to_distribution(p_vis_rollout_vec, tau)
