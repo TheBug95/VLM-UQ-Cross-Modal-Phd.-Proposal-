@@ -37,6 +37,7 @@ from src.uncertainty import (
     attention_weighted_pooling,
     compute_attention_weights,
     compute_roi_weights,
+    cosine_distance,
     generate_attention_heatmap,
     head_specific_attention,
     norm_weighted_pooling,
@@ -226,49 +227,52 @@ class MedGemmaInference:
         if len(text_positions) > 0:
             text_positions = text_positions[:-1]
 
-        for layer in self.cfg.inference.layers:
-            h_layer = hs[layer][0]  # (seq_len, 2560)
+        # Solo capa 34 para KL (capas 17 y 26 colapsan por baja diferenciación)
+        layer = 34
+        h_layer = hs[layer][0]  # (seq_len, 2560)
 
-            # p_text: última posición del prefill
-            p_text_vec = h_layer[-1, :]
+        # p_text: última posición del prefill
+        p_text_vec = h_layer[-1, :]
 
-            # p_vis: pooling de tokens de imagen
-            h_img = h_layer[img_positions, :]
+        # p_vis: pooling de tokens de imagen
+        h_img = h_layer[img_positions, :]
 
-            for pooling in self.cfg.uncertainty.pooling:
-                if pooling == "mean":
-                    p_vis_vec = h_img.mean(dim=0)
-                else:  # max
-                    p_vis_vec = h_img.max(dim=0).values
+        for pooling in self.cfg.uncertainty.pooling:
+            if pooling == "mean":
+                p_vis_vec = h_img.mean(dim=0)
+            else:  # max
+                p_vis_vec = h_img.max(dim=0).values
 
-                # Ablación imagen↔prompt: mean pooling de tokens de texto
-                if len(text_positions) > 0 and pooling == "mean":
-                    p_prompt_vec = h_layer[text_positions, :].mean(dim=0)
-                else:
-                    p_prompt_vec = None
+            # Ablación imagen↔prompt: mean pooling de tokens de texto
+            if len(text_positions) > 0 and pooling == "mean":
+                p_prompt_vec = h_layer[text_positions, :].mean(dim=0)
+            else:
+                p_prompt_vec = None
 
-                for tau in self.cfg.uncertainty.temperatures:
-                    p_vis = to_distribution(p_vis_vec, tau)
-                    p_text = to_distribution(p_text_vec, tau)
+            for tau in self.cfg.uncertainty.temperatures:
+                p_vis = to_distribution(p_vis_vec, tau)
+                p_text = to_distribution(p_text_vec, tau)
 
-                    suffix = f"L{layer}_tau{tau}_{pooling}"
-                    results[f"kl_v_t_{suffix}"] = kl_div(p_vis, p_text, eps)
-                    results[f"kl_t_v_{suffix}"] = kl_div(p_text, p_vis, eps)
-                    results[f"jsd_{suffix}"] = jsd(
-                        p_vis.cpu().numpy(), p_text.cpu().numpy()
+                suffix = f"L{layer}_tau{tau}_{pooling}"
+                results[f"kl_v_t_{suffix}"] = kl_div(p_vis, p_text, eps)
+                results[f"kl_t_v_{suffix}"] = kl_div(p_text, p_vis, eps)
+                results[f"jsd_{suffix}"] = jsd(
+                    p_vis.cpu().numpy(), p_text.cpu().numpy()
+                )
+
+                # Distancia coseno (no requiere softmax, no colapsa)
+                results[f"cosine_{suffix}"] = cosine_distance(p_vis_vec, p_text_vec)
+
+                # Ablación prompt (solo L34, tau=1, mean según diseño)
+                if (
+                    tau == 1.0
+                    and pooling == "mean"
+                    and p_prompt_vec is not None
+                ):
+                    p_prompt = to_distribution(p_prompt_vec, tau)
+                    results["kl_prompt_L34_tau1_mean"] = kl_div(
+                        p_vis, p_prompt, eps
                     )
-
-                    # Ablación prompt (solo L34, tau=1, mean según diseño)
-                    if (
-                        layer == 34
-                        and tau == 1.0
-                        and pooling == "mean"
-                        and p_prompt_vec is not None
-                    ):
-                        p_prompt = to_distribution(p_prompt_vec, tau)
-                        results["kl_prompt_L34_tau1_mean"] = kl_div(
-                            p_vis, p_prompt, eps
-                        )
 
             # Ablación ROI-weighted pooling (responde a la crítica de dilución espacial)
             if roi_weights is not None:
@@ -282,6 +286,7 @@ class MedGemmaInference:
                     results[f"jsd_{suffix}"] = jsd(
                         p_vis_roi.cpu().numpy(), p_text.cpu().numpy()
                     )
+                    results[f"cosine_{suffix}"] = cosine_distance(p_vis_roi_vec, p_text_vec)
 
             # Ablación attention-weighted pooling (deployable, sin máscaras externas)
             if attentions is not None:
@@ -298,6 +303,7 @@ class MedGemmaInference:
                     results[f"jsd_{suffix}"] = jsd(
                         p_vis_attn.cpu().numpy(), p_text.cpu().numpy()
                     )
+                    results[f"cosine_{suffix}"] = cosine_distance(p_vis_attn_vec, p_text_vec)
 
             # Ablación Top-K pooling (sin parámetros, deployable)
             p_vis_topk_vec = topk_pooling(h_img, k=max(1, len(img_positions) // 10))
@@ -310,6 +316,7 @@ class MedGemmaInference:
                 results[f"jsd_{suffix}"] = jsd(
                     p_vis_topk.cpu().numpy(), p_text.cpu().numpy()
                 )
+                results[f"cosine_{suffix}"] = cosine_distance(p_vis_topk_vec, p_text_vec)
 
             # Ablación Norm-Weighted pooling (sin parámetros, deployable)
             p_vis_normw_vec = norm_weighted_pooling(h_img)
@@ -322,6 +329,7 @@ class MedGemmaInference:
                 results[f"jsd_{suffix}"] = jsd(
                     p_vis_normw.cpu().numpy(), p_text.cpu().numpy()
                 )
+                results[f"cosine_{suffix}"] = cosine_distance(p_vis_normw_vec, p_text_vec)
 
             # Ablación Attention Rollout (caminos indirectos de información)
             # NOTA: el rollout termina en la misma capa que los hidden states
@@ -340,6 +348,7 @@ class MedGemmaInference:
                     results[f"jsd_{suffix}"] = jsd(
                         p_vis_rollout.cpu().numpy(), p_text.cpu().numpy()
                     )
+                    results[f"cosine_{suffix}"] = cosine_distance(p_vis_rollout_vec, p_text_vec)
 
             # Ablación Head-Specific Attention (cabezas visuales seleccionadas)
             if attentions is not None:
@@ -354,6 +363,7 @@ class MedGemmaInference:
                     results[f"jsd_{suffix}"] = jsd(
                         p_vis_headspec.cpu().numpy(), p_text.cpu().numpy()
                     )
+                    results[f"cosine_{suffix}"] = cosine_distance(p_vis_headspec_vec, p_text_vec)
 
         return results
 
@@ -516,6 +526,77 @@ def append_result(cfg: Config, row: dict[str, Any], filename: str = "results_ful
     df.to_csv(path, mode="a", header=not path.exists(), index=False)
 
 
+def to_long_format(
+    row: dict[str, Any],
+    signal_prefixes: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Convierte un registro de formato ancho a formato largo.
+
+    Formato ancho: una fila con muchas columnas (kl_v_t_L34_tau1_mean, ...).
+    Formato largo: una fila por señal (image_filename, prompt_id, signal_type, layer, tau, pooling, value).
+
+    Args:
+        row: registro en formato ancho.
+        signal_prefixes: prefijos de columnas de señal a extraer (default: kl_, jsd_, cosine_).
+
+    Returns:
+        Lista de registros en formato largo.
+    """
+    signal_prefixes = signal_prefixes or ["kl_", "jsd_", "cosine_"]
+
+    # Metadatos (columnas que no son señales)
+    meta_cols = [
+        "image_filename", "patient_id", "prompt_id", "split",
+        "logit_yes", "logit_no", "p_yes", "pred", "label", "correct",
+        "entropy_answer", "msp_answer", "energy_answer",
+        "inference_ms", "seed",
+    ]
+
+    base_record = {k: v for k, v in row.items() if k in meta_cols}
+
+    long_records = []
+
+    # Extraer señales
+    for key, value in row.items():
+        if not any(key.startswith(p) for p in signal_prefixes):
+            continue
+        if key in meta_cols:
+            continue
+
+        # Parsear nombre de señal: {signal_type}_L{layer}_tau{tau}_{pooling}
+        # Ej: kl_v_t_L34_tau1.0_mean -> signal_type=kl_v_t, layer=34, tau=1.0, pooling=mean
+        parts = key.split("_")
+        if key.startswith("kl_"):
+            signal_type = "_".join(parts[:3])  # kl_v_t o kl_t_v
+            layer = parts[3].replace("L", "")
+            tau = parts[4].replace("tau", "")
+            pooling = parts[5] if len(parts) > 5 else "mean"
+        elif key.startswith("jsd_"):
+            signal_type = "jsd"
+            layer = parts[1].replace("L", "")
+            tau = parts[2].replace("tau", "")
+            pooling = parts[3] if len(parts) > 3 else "mean"
+        elif key.startswith("cosine_"):
+            signal_type = "cosine"
+            layer = parts[1].replace("L", "")
+            tau = parts[2].replace("tau", "")
+            pooling = parts[3] if len(parts) > 3 else "mean"
+        else:
+            continue
+
+        long_record = {
+            **base_record,
+            "signal_type": signal_type,
+            "layer": layer,
+            "tau": tau,
+            "pooling": pooling,
+            "value": value,
+        }
+        long_records.append(long_record)
+
+    return long_records
+
+
 # ------------------------------------------------------------------------------
 # Piloto con sanity checks
 # ------------------------------------------------------------------------------
@@ -636,13 +717,17 @@ def run_pilot(cfg: Config, n: int = 20, with_attentions: bool = False, seed: int
             pipeline.generate_attention_heatmap(img, "p1", layer=34, out_path=heatmap_path)
             print(f"  → {heatmap_path}")
 
-    # Guardar piloto
-    df = pd.DataFrame(results)
+    # Guardar piloto en formato largo
+    long_records = []
+    for record in results:
+        long_records.extend(to_long_format(record))
+
+    df = pd.DataFrame(long_records)
     if save:
         out_path = Path(cfg.paths.results) / "results_pilot.csv"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
-        print(f"\n[pilot] Guardado: {out_path} ({len(df)} filas)")
+        print(f"\n[pilot] Guardado: {out_path} ({len(df)} filas, formato largo)")
     return df
 
     # Accuracy base (primer número a mirar)
@@ -720,13 +805,17 @@ def run_full(cfg: Config, with_attentions: bool = False, seed: int | None = None
             results.append(record)
             print(f"[full] {row['image_filename']} {prompt_id}: p_yes={signals['p_yes']:.3f} correct={record['correct']}")
 
-    # Escribir todo al final con un solo to_csv (evita problemas de tipo al append)
-    df = pd.DataFrame(results)
+    # Escribir todo al final en formato largo (cada fila = observación × variante de señal)
+    long_records = []
+    for record in results:
+        long_records.extend(to_long_format(record))
+
+    df = pd.DataFrame(long_records)
     if save:
         out_path = Path(cfg.paths.results) / "results_full.csv"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
-        print(f"\n[full] Guardado: {out_path} ({len(df)} filas)")
+        print(f"\n[full] Guardado: {out_path} ({len(df)} filas, formato largo)")
     return df
 
 

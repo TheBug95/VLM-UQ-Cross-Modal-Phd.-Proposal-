@@ -249,6 +249,29 @@ def norm_weighted_pooling(h_img: torch.Tensor) -> torch.Tensor:
 
 
 # ------------------------------------------------------------------------------
+# Distancia coseno (no requiere softmax, no colapsa)
+# ------------------------------------------------------------------------------
+def cosine_distance(p_vis: torch.Tensor, p_text: torch.Tensor) -> float:
+    """Distancia coseno entre dos vectores: 1 - similitud coseno.
+
+    No requiere softmax ni convertir a probabilidades. Mide directamente el
+    desacuerdo angular entre imagen y texto. Rango [0, 2], donde 0 = idénticos,
+    2 = opuestos.
+
+    Args:
+        p_vis: vector de hidden state de imagen (hidden_dim,).
+        p_text: vector de hidden state de texto (hidden_dim,).
+
+    Returns:
+        Distancia coseno (float).
+    """
+    p_vis = p_vis.float()
+    p_text = p_text.float()
+    similarity = torch.nn.functional.cosine_similarity(p_vis, p_text, dim=0)
+    return float(1.0 - similarity)
+
+
+# ------------------------------------------------------------------------------
 # Attention Rollout (Abnar & Zuidema 2020)
 # ------------------------------------------------------------------------------
 def attention_rollout(
