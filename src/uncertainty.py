@@ -249,6 +249,123 @@ def norm_weighted_pooling(h_img: torch.Tensor) -> torch.Tensor:
 
 
 # ------------------------------------------------------------------------------
+# Attention Rollout (Abnar & Zuidema 2020)
+# ------------------------------------------------------------------------------
+def attention_rollout(
+    attentions: tuple,
+    img_positions: torch.Tensor,
+    start_layer: int = 0,
+    end_layer: int = 34,
+) -> np.ndarray:
+    """Calcula la atención efectiva del último token a los tokens de imagen
+    propagando la atención a través de todas las capas.
+
+    Captura caminos indirectos: respuesta -> token de texto -> tokens de imagen.
+    Ref: Abnar & Zuidema (2020), "Quantifying Attention Flow".
+
+    Args:
+        attentions: tupla de atenciones por paso de generación (de
+            model.generate(output_attentions=True)).
+        img_positions: tensor con las posiciones de los tokens de imagen.
+        start_layer: capa inicial (default 0).
+        end_layer: capa final (default 34).
+
+    Returns:
+        Array (num_image_tokens,) con pesos normalizados que suman 1.
+    """
+    if not attentions or len(attentions) == 0:
+        raise ValueError("attentions está vacío")
+
+    # Empezar con la identidad
+    rollout = None
+
+    for layer_idx in range(start_layer, min(end_layer, len(attentions[0]))):
+        # Promediar sobre cabezas y convertir a float32
+        attn = attentions[0][layer_idx][0].float().mean(dim=0)  # (seq, seq)
+
+        # Añadir conexión residual: 0.5 * identidad + 0.5 * atención
+        eye = torch.eye(attn.shape[0], device=attn.device)
+        attn_with_residual = 0.5 * eye + 0.5 * attn
+
+        # Re-normalizar filas para que sumen 1
+        attn_with_residual = attn_with_residual / attn_with_residual.sum(dim=-1, keepdim=True)
+
+        if rollout is None:
+            rollout = attn_with_residual
+        else:
+            rollout = attn_with_residual @ rollout
+
+    # Extraer: atención del último token -> tokens de imagen
+    last_to_img = rollout[-1, img_positions].cpu().numpy()
+
+    # Normalizar
+    total = last_to_img.sum()
+    if total > 0:
+        last_to_img = last_to_img / total
+    else:
+        last_to_img = np.ones_like(last_to_img) / len(last_to_img)
+
+    return last_to_img
+
+
+# ------------------------------------------------------------------------------
+# Head-Specific Attention (selección de cabezas visuales)
+# ------------------------------------------------------------------------------
+def head_specific_attention(
+    attentions: tuple,
+    layer: int,
+    img_positions: torch.Tensor,
+    top_k_heads: int = 4,
+) -> np.ndarray:
+    """Selecciona las K cabezas que más atienden a tokens de imagen
+    y usa solo esas para el pooling.
+
+    Intuición: las cabezas "visuales" concentran su atención en los tokens
+    de imagen cuando deben responder sobre la imagen. Las cabezas "posicionales"
+    atienden uniformemente y añaden ruido.
+
+    Args:
+        attentions: tupla de atenciones por paso de generación.
+        layer: índice de capa (17, 26, 34).
+        img_positions: tensor con las posiciones de los tokens de imagen.
+        top_k_heads: número de cabezas a seleccionar (default 4).
+
+    Returns:
+        Array (num_image_tokens,) con pesos normalizados que suman 1.
+    """
+    if not attentions or len(attentions) == 0:
+        raise ValueError("attentions está vacío")
+
+    attn_idx = layer - 1
+    if attn_idx < 0 or attn_idx >= len(attentions[0]):
+        raise ValueError(f"Capa {layer} fuera de rango")
+
+    attn_layer = attentions[0][attn_idx][0].float()  # (num_heads, seq, seq)
+    num_heads = attn_layer.shape[0]
+
+    # Para cada cabeza: ¿cuánta atención total pone el último token
+    # sobre los tokens de imagen?
+    last_token_attn = attn_layer[:, -1, :]  # (num_heads, seq)
+    img_focus = last_token_attn[:, img_positions].sum(dim=-1)  # (num_heads,)
+
+    # Seleccionar las K cabezas más "visuales"
+    _, top_heads = img_focus.topk(min(top_k_heads, num_heads))
+
+    # Promediar solo sobre esas cabezas
+    selected_attn = last_token_attn[top_heads, :][:, img_positions]  # (K, 256)
+    weights = selected_attn.mean(dim=0).cpu().numpy()
+
+    # Normalizar
+    total = weights.sum()
+    if total > 0:
+        weights = weights / total
+    else:
+        weights = np.ones_like(weights) / len(weights)
+
+    return weights
+
+
+# ------------------------------------------------------------------------------
 # Heatmap de atención
 # ------------------------------------------------------------------------------
 def generate_attention_heatmap(

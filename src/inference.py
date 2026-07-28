@@ -33,10 +33,12 @@ from scipy.spatial.distance import jensenshannon
 from src.config import Config
 from src.data import download_dataset
 from src.uncertainty import (
+    attention_rollout,
     attention_weighted_pooling,
     compute_attention_weights,
     compute_roi_weights,
     generate_attention_heatmap,
+    head_specific_attention,
     norm_weighted_pooling,
     roi_weighted_pooling,
     save_attention_heatmap,
@@ -325,6 +327,34 @@ class MedGemmaInference:
                 results[f"jsd_{suffix}"] = jsd(
                     p_vis_normw.cpu().numpy(), p_text.cpu().numpy()
                 )
+
+            # Ablación Attention Rollout (caminos indirectos de información)
+            if attentions is not None:
+                rollout_weights = attention_rollout(attentions, img_positions)
+                p_vis_rollout_vec = attention_weighted_pooling(h_img, rollout_weights)
+                for tau in self.cfg.uncertainty.temperatures:
+                    p_vis_rollout = to_distribution(p_vis_rollout_vec, tau)
+                    p_text = to_distribution(p_text_vec, tau)
+                    suffix = f"L{layer}_tau{tau}_rollout"
+                    results[f"kl_v_t_{suffix}"] = kl_div(p_vis_rollout, p_text, eps)
+                    results[f"kl_t_v_{suffix}"] = kl_div(p_text, p_vis_rollout, eps)
+                    results[f"jsd_{suffix}"] = jsd(
+                        p_vis_rollout.cpu().numpy(), p_text.cpu().numpy()
+                    )
+
+            # Ablación Head-Specific Attention (cabezas visuales seleccionadas)
+            if attentions is not None:
+                headspec_weights = head_specific_attention(attentions, layer, img_positions)
+                p_vis_headspec_vec = attention_weighted_pooling(h_img, headspec_weights)
+                for tau in self.cfg.uncertainty.temperatures:
+                    p_vis_headspec = to_distribution(p_vis_headspec_vec, tau)
+                    p_text = to_distribution(p_text_vec, tau)
+                    suffix = f"L{layer}_tau{tau}_headspec"
+                    results[f"kl_v_t_{suffix}"] = kl_div(p_vis_headspec, p_text, eps)
+                    results[f"kl_t_v_{suffix}"] = kl_div(p_text, p_vis_headspec, eps)
+                    results[f"jsd_{suffix}"] = jsd(
+                        p_vis_headspec.cpu().numpy(), p_text.cpu().numpy()
+                    )
 
         return results
 
