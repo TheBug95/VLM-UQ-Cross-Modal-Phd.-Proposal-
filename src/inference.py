@@ -59,20 +59,13 @@ BASE_COLUMNS = [
 def to_distribution(vec: torch.Tensor, tau: float = 1.0) -> torch.Tensor:
     """Convierte un vector crudo a distribución con F.log_softmax en float64.
 
-    Regla numérica dura (ver AGENTS.md §5): las massive activations de Gemma
-    colapsan softmax a distribuciones degeneradas ([0,...,1,...,0]), incluso
-    en float64. Para evitarlo, aplicamos z-score normalization antes de softmax:
-    centrar en 0 y escalar a varianza 1. Esto preserva la forma relativa de la
-    distribución sin colapsarla.
+    Usamos softmax crudo (sin z-score normalization) porque la z-score aplana
+    demasiado las distribuciones (entropía ~7.3, casi uniforme), haciendo que
+    la KL sea casi cero para todos los casos. Softmax ya resta el máximo antes
+    de exponenciar, así que no hay overflow numérico.
     """
     # Convertir a float32 para evitar overflow/underflow con bfloat16
     vec = vec.float()
-
-    # Z-score normalization para evitar colapso de softmax
-    mean = vec.mean()
-    std = vec.std()
-    if std > 1e-10:
-        vec = (vec - mean) / std
 
     log_p = torch.nn.functional.log_softmax(vec / tau, dim=0, dtype=torch.float64)
     return log_p.exp()
