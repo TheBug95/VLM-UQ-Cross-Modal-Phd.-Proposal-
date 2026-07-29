@@ -207,7 +207,7 @@ Las dos señales son **testigos que vieron cosas distintas**: su correlación es
 | Hipótesis / variante | Resultado | Conclusión |
 |---|---|---|
 | H4: u(x) correlaciona con la severidad (cdr_grade) | Spearman rho = +0.001, p = 0.99 | **Rechazada.** La señal detecta errores, no severidad |
-| Fusión de las dos direcciones KL (suma, max, min, ranks, JSD) | Todas ≤ 0.649 < 0.661 de kl_t_v sola; añadir v→t a la combinación estrella la baja de 0.698 a 0.681 | La señal del error vive solo en la dirección t→v (alucinación); v→t es mayormente ruido (0.566) pese a ser no redundante (Spearman 0.171) |
+| Fusión de las dos direcciones KL (ablación exhaustiva: 8 poolings × 3 τ × suma/max/min/asimetría/ranks/JSD) | Ninguna fusión supera a kl_t_v sola (mejor: rk_sum 0.649 < 0.661); añadir v→t a la combinación estrella siempre la baja (0.698 → 0.681) | La señal del error vive solo en la dirección t→v (alucinación); v→t es mayormente ruido. "La fusión ayuda" solo en configs donde t_v ya es azar (~0.50) |
 | ROI oracle (máscaras del disco) | AUROC 0.35 en las 69 con máscara | El 0.889 del piloto fue artefacto de muestra pequeña; no se reproduce |
 | Distancia coseno | AUROC 0.42–0.57 | No aporta; la KL va mejor |
 | JSD | Saturada en su techo (0.693) con τ=1 | No discrimina en este régimen |
