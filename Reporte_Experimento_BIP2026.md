@@ -168,7 +168,7 @@ Lectura honesta:
 - **Correlación entre señales** (Spearman, `figures/fig6_correlacion_senales.png`): KL⊥MSP = 0.27 (complementarias), KL⊥energy = −0.01 (totalmente independientes), entropy≡MSP = 1.00 (la misma señal), energy–MSP = 0.84 (redundantes — por eso energy no aporta).
 - En P4 (prompt con rol de oftalmólogo) todo es más débil: KL 0.614, MSP 0.629, combinación 0.654.
 
-**Triage (accuracy-coverage, P1):** si se deriva al oftalmólogo el 50% de casos con mayor u(x), la accuracy en el 50% que el modelo responde solo sube de **79.8% → 89.1%**.
+**Triage (accuracy-coverage, P1):** si se deriva al oftalmólogo el 50% de casos con mayor u(x), la accuracy en el 50% que el modelo responde solo sube de **79.8% → 89.1%**. Y en el otro extremo: la combinación tiene una **zona verde** — los **39 casos menos inciertos (30.2%) son todos correctos** (el primer error aparece en la posición 40 del ranking). Lectura clínica: auto-responder la cola (~30% sin errores en esta cohorte), derivar la cabeza, y la zona gris intermedia al especialista.
 
 ---
 
