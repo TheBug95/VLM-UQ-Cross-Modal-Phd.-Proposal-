@@ -46,11 +46,11 @@ for nombre, u in [("KL", kl.values), ("1-MSP", (1 - obs_main.loc[v.image_filenam
     print(f"Spearman(verbalized, {nombre}) = {rho:+.3f}")
 
 print("\n=== 5. ¿Y la combinación con verbalized? ===")
-combo_verb = (v.u_verbalized.rank() / n + kl.rank() / n).values
-print(f"rank(verb)+rank(KL):        AUROC = {roc_auc_score(y_err, combo_verb):.3f}")
-combo_3 = (v.u_verbalized.rank() / n + kl.rank() / n
-           + (1 - obs_main.loc[v.image_filename, "msp_answer"]).rank() / n).values
-print(f"rank(verb)+rank(KL)+rank(MSP): AUROC = {roc_auc_score(y_err, combo_3):.3f}")
+rk_v = pd.Series(v.u_verbalized.values).rank().values / n
+rk_k = pd.Series(kl.values).rank().values / n
+rk_m = pd.Series((1 - obs_main.loc[v.image_filename, "msp_answer"]).values).rank().values / n
+print(f"rank(verb)+rank(KL):         AUROC = {roc_auc_score(y_err, rk_v + rk_k):.3f}")
+print(f"rank(verb)+rank(KL)+rank(MSP): AUROC = {roc_auc_score(y_err, rk_v + rk_k + rk_m):.3f}")
 
 print("\n=== 6. Calibración bruta: ¿dice el modelo la verdad? ===")
 for lo, hi in [(0, 60), (60, 80), (80, 90), (90, 95), (95, 100.01)]:
