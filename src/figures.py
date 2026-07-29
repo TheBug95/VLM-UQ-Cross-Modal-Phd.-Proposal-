@@ -104,6 +104,17 @@ def fig2_boxplot(frame: pd.DataFrame, signal_name: str, out_path: Path) -> None:
     except Exception:
         p_text = "Mann-Whitney: no disponible"
 
+    # Métricas de la señal mostrada (AUROC y Excess-AURC)
+    data_all = frame[["correct", "value"]].dropna()
+    y_c = data_all["correct"].values
+    v = data_all["value"].values.astype(float)
+    try:
+        auroc_val = roc_auc_score(1 - y_c, v)
+        exc_val = excess_aurc(y_c, v)["excess_aurc_norm"]
+        p_text += f"\nAUROC = {auroc_val:.3f} | Excess-AURC = {exc_val:.3f}"
+    except Exception:
+        pass
+
     ax.text(0.05, 0.95, p_text, transform=ax.transAxes, fontsize=9,
             verticalalignment="top", bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
 
@@ -171,7 +182,7 @@ def fig3_roc_pr(signals: dict[str, pd.DataFrame], out_path: Path) -> None:
 # ------------------------------------------------------------------------------
 def fig4_accuracy_coverage(signals: dict[str, pd.DataFrame], out_path: Path) -> None:
     """Accuracy del subconjunto retenido al derivar el X% más incierto."""
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(7.5, 5))
 
     base_acc = None
     for name, frame in signals.items():
@@ -179,6 +190,10 @@ def fig4_accuracy_coverage(signals: dict[str, pd.DataFrame], out_path: Path) -> 
         y_correct = 1 - y_error
         base_acc = y_correct.mean()
         n_valid = len(vals)
+
+        # AURC de la señal (área bajo la curva riesgo-cobertura completa)
+        arc = excess_aurc(y_correct, vals)
+        label = f"{name} (AURC={arc['aurc']:.3f}, Excess={arc['excess_aurc_norm']:.3f})"
 
         order = np.argsort(-vals)  # más incierto primero
         coverages, accuracies = [], []
@@ -191,7 +206,7 @@ def fig4_accuracy_coverage(signals: dict[str, pd.DataFrame], out_path: Path) -> 
             coverages.append(coverage)
             accuracies.append(y_correct[keep].mean())
 
-        ax.plot(coverages, accuracies, label=name, linewidth=2, marker="o", markersize=3)
+        ax.plot(coverages, accuracies, label=label, linewidth=2, marker="o", markersize=3)
 
     if base_acc is not None:
         ax.axhline(base_acc, color="k", linestyle="--",
@@ -199,8 +214,8 @@ def fig4_accuracy_coverage(signals: dict[str, pd.DataFrame], out_path: Path) -> 
 
     ax.set_xlabel("Cobertura (fracción de casos respondidos)")
     ax.set_ylabel("Accuracy del modelo")
-    ax.set_title("Fig 4: Accuracy vs. Coverage\n(derivando el X% más incierto al oftalmólogo)")
-    ax.legend(loc="lower right", fontsize=8)
+    ax.set_title("Fig 4: Accuracy vs. Coverage\n(derivando el X% más incierto; AURC = área bajo 1−accuracy)")
+    ax.legend(loc="lower right", fontsize=7)
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
