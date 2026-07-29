@@ -210,6 +210,7 @@ Las dos señales son **testigos que vieron cosas distintas**: su correlación es
 | Hipótesis / variante | Resultado | Conclusión |
 |---|---|---|
 | H4: u(x) correlaciona con la severidad (cdr_grade) | Spearman rho = +0.001, p = 0.99 | **Rechazada.** La señal detecta errores, no severidad |
+| **Verbalized confidence (P5, baseline 2×)** | **AUROC 0.519 (azar).** El modelo declara 95% en 118/129 imágenes y 90% en 11 — solo 2 valores distintos. Mal calibrada (dice 95%, acierta 80.5%) | "Simplemente preguntarle al modelo" no funciona: la confianza verbal es degenerada. Nuestro 1× (0.661/0.698) supera claramente al baseline 2×. Tampoco aporta a las combinaciones (verb+KL+MSP = 0.694 ≤ 0.698) |
 | Fusión de las dos direcciones KL (ablación exhaustiva: 8 poolings × 3 τ × suma/max/min/asimetría/ranks/JSD) | Ninguna fusión supera a kl_t_v sola (mejor: rk_sum 0.649 < 0.661); añadir v→t a la combinación estrella siempre la baja (0.698 → 0.681) | La señal del error vive solo en la dirección t→v (alucinación); v→t es mayormente ruido. "La fusión ayuda" solo en configs donde t_v ya es azar (~0.50) |
 | ROI oracle (máscaras del disco) | AUROC 0.35 en las 69 con máscara | El 0.889 del piloto fue artefacto de muestra pequeña; no se reproduce |
 | Distancia coseno | AUROC 0.42–0.57 | No aporta; la KL va mejor |
