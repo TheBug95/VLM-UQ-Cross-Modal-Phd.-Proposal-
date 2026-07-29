@@ -503,6 +503,76 @@ class MedGemmaInference:
             "self_consistency_entropy": float(entropy_sc),
         }
 
+    # ------------------------------------------------------------------
+    # Verbalized confidence (P5, baseline 2×)
+    # ------------------------------------------------------------------
+    def infer_verbalized(self, image: Image.Image) -> dict[str, Any]:
+        """Baseline 2×: tras responder yes/no, preguntar la confianza (0-100).
+
+        Turno 1 (greedy, 1 token): respuesta a P1 (igual que la corrida principal).
+        Turno 2 (greedy, ≤8 tokens): "How confident are you...?" → parsing del número.
+
+        Returns:
+            dict con answer ("yes"/"no"), pred (0|1), verbalized_conf (0-100 o NaN),
+            u_verbalized (1 - conf/100) y parse_ok (0|1).
+        """
+        import re
+
+        # --- Turno 1: respuesta a P1 (greedy, determinista) ---
+        prompt1 = self.build_prompt("p1")
+        inputs1 = self.processor(images=image, text=prompt1, return_tensors="pt").to(self.device)
+        t0 = time.time()
+        with torch.inference_mode():
+            out1 = self.model.generate(
+                **inputs1, max_new_tokens=1, do_sample=False,
+                output_scores=True, return_dict_in_generate=True,
+            )
+        scores0 = out1.scores[0]
+        logit_yes = float(scores0[0, self.cfg.tokens.yes].item())
+        logit_no = float(scores0[0, self.cfg.tokens.no].item())
+        pred = int(logit_yes > logit_no)
+        gen_token = out1.sequences[0, inputs1["input_ids"].shape[1]:]
+        answer = self.processor.tokenizer.decode(gen_token).strip().lower()
+        answer = "yes" if answer.startswith("yes") else "no"
+
+        # --- Turno 2: confianza verbalizada (0-100) ---
+        p1_user = self.cfg.prompts["p1"].user
+        p5_user = self.cfg.prompts["p5"].user
+        msgs = [
+            {"role": "user", "content": [
+                {"type": "image"}, {"type": "text", "text": p1_user}]},
+            {"role": "model", "content": [{"type": "text", "text": answer}]},
+            {"role": "user", "content": [{"type": "text", "text": p5_user}]},
+        ]
+        prompt2 = self.processor.tokenizer.apply_chat_template(
+            msgs, tokenize=False, add_generation_prompt=True
+        )
+        inputs2 = self.processor(images=image, text=prompt2, return_tensors="pt").to(self.device)
+        with torch.inference_mode():
+            out2 = self.model.generate(
+                **inputs2, max_new_tokens=8, do_sample=False,
+                return_dict_in_generate=True,
+            )
+        gen2 = out2.sequences[0, inputs2["input_ids"].shape[1]:]
+        text2 = self.processor.tokenizer.decode(gen2, skip_special_tokens=True)
+        inference_ms = (time.time() - t0) * 1000
+
+        m = re.search(r"(\d{1,3})", text2)
+        if m and int(m.group(1)) <= 100:
+            conf = int(m.group(1))
+            return {
+                "answer": answer, "pred": pred,
+                "verbalized_conf": conf, "u_verbalized": 1.0 - conf / 100.0,
+                "parse_ok": 1, "raw_response": text2.strip()[:60],
+                "inference_ms": inference_ms,
+            }
+        return {
+            "answer": answer, "pred": pred,
+            "verbalized_conf": np.nan, "u_verbalized": np.nan,
+            "parse_ok": 0, "raw_response": text2.strip()[:60],
+            "inference_ms": inference_ms,
+        }
+
 
 # ------------------------------------------------------------------------------
 # Carga de imágenes desde master_table
@@ -862,6 +932,58 @@ def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10, s
 
 
 # ------------------------------------------------------------------------------
+# Verbalized confidence (P5, baseline 2×)
+# ------------------------------------------------------------------------------
+def run_verbalized(cfg: Config) -> None:
+    """Ejecuta el baseline verbalized confidence sobre las 129 imágenes (solo P1).
+
+    Dos turnos greedy por imagen: respuesta yes/no + confianza 0-100.
+    Escritura incremental en results_verbalized.csv (reanudable: salta las
+    imágenes ya presentes en el CSV).
+    """
+    download_dataset(cfg)
+    master = pd.read_csv(cfg.paths.master_table)
+
+    out_path = Path(cfg.paths.results) / "results_verbalized.csv"
+    done: set[str] = set()
+    if out_path.exists():
+        done = set(pd.read_csv(out_path)["image_filename"])
+        print(f"[verb] Reanudando: {len(done)} imágenes ya procesadas")
+
+    pipeline = MedGemmaInference(cfg)
+    pipeline.load()
+    print(f"[verb] {len(master)} imágenes × P5 (2 turnos)")
+
+    for i, row in master.iterrows():
+        if row["image_filename"] in done:
+            continue
+        img = load_image(cfg, row["image_filename"], row["split"])
+        signals = pipeline.infer_verbalized(img)
+        record = {
+            "image_filename": row["image_filename"],
+            "patient_id": row["patient_id"],
+            "split": row["split"],
+            "label": int(row["label"]),
+            "correct": int(signals["pred"] == row["label"]),
+            **signals,
+        }
+        append_result(cfg, record, filename="results_verbalized.csv")
+        if (i + 1) % 10 == 0 or i == 0:
+            print(f"[verb] {i + 1}/{len(master)} {row['image_filename']}: "
+                  f"answer={signals['answer']}, conf={signals['verbalized_conf']}")
+
+    # Resumen final
+    df = pd.read_csv(out_path)
+    n_parse = int(df.parse_ok.sum())
+    acc = float(df.correct.mean())
+    print(f"\n[verb] Terminado: {len(df)} filas | parse_ok={n_parse}/{len(df)} | "
+          f"accuracy (turno 1)={acc:.3f}")
+    if n_parse < len(df):
+        print(f"[verb] ⚠ {len(df) - n_parse} respuestas sin número parseable "
+              f"(revisar raw_response)")
+
+
+# ------------------------------------------------------------------------------
 # Repeticiones con múltiples semillas
 # ------------------------------------------------------------------------------
 def run_with_seeds(cfg: Config, seeds: list[int], mode: str, **kwargs) -> None:
@@ -916,6 +1038,8 @@ def main() -> None:
     parser.add_argument("--pilot", action="store_true", help="Ejecutar piloto con sanity checks")
     parser.add_argument("--run-full", action="store_true", help="Ejecutar corrida completa")
     parser.add_argument("--self-consistency", action="store_true", help="Ejecutar baseline multi-pass")
+    parser.add_argument("--verbalized", action="store_true",
+                        help="Ejecutar baseline verbalized confidence (P5, solo P1)")
     parser.add_argument("--n", type=int, default=20, help="Imágenes para el piloto")
     parser.add_argument("--attentions", action="store_true",
                         help="Extraer atenciones cruzadas y generar heatmaps (piloto)")
@@ -947,8 +1071,10 @@ def main() -> None:
         run_full(cfg, with_attentions=args.attentions)
     elif args.self_consistency:
         run_self_consistency(cfg)
+    elif args.verbalized:
+        run_verbalized(cfg)
     else:
-        print("Uso: python -m src.inference [--pilot | --run-full | --self-consistency]")
+        print("Uso: python -m src.inference [--pilot | --run-full | --self-consistency | --verbalized]")
         print("Ejemplo: python -m src.inference --pilot --n 20")
         print("Con semillas: python -m src.inference --run-full --seeds 42 123 456")
 
