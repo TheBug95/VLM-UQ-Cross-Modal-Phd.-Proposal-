@@ -150,19 +150,22 @@ Estadísticos reales sobre las 129 imágenes, prompt P1, **τ=1** (la temperatur
 
 ## 6. Resultados de detección de errores (lo importante)
 
-**La tarea:** ordenar las 129 imágenes por u(x) y ver si los 26 errores quedan arriba. Métrica: AUROC (0.5 = azar, 1.0 = perfecto). IC = intervalo de confianza bootstrap del 95% (9.999 remuestreos BCa).
+**La tarea:** ordenar las 129 imágenes por u(x) y ver si los 26 errores quedan arriba. Métricas: **AUROC** (0.5 = azar, 1.0 = perfecto; ranking global) y **AURC / Excess-AURC** (área bajo la curva riesgo-cobertura de selective prediction — el error del modelo integrado sobre todos los niveles de derivación; Excess normalizado: 0 = oracle, 1 = azar, menor = mejor). IC = intervalo de confianza bootstrap del 95% (9.999 remuestreos BCa).
 
-| Señal (P1)                                   | AUROC     | IC 95%             | p (Mann-Whitney) |
-| -------------------------------------------- | --------- | ------------------ | ---------------- |
-| **KL congelada (`kl_t_v` max τ=1, capa 34)** | **0.661** | [0.522, 0.772]     | 0.006            |
-| 1−MSP (baseline gratis)                      | 0.624     | [0.491, 0.739]     | 0.026            |
-| entropy (baseline)                           | 0.624     | [0.491, 0.739]     | 0.026            |
-| energy (baseline)                            | 0.560     | [0.432, 0.680]     | 0.175            |
-| **Combinación rank(KL)+rank(1−MSP)**         | **0.698** | **[0.596, 0.787]** | **0.001**        |
+| Señal (P1)                                   | AUROC     | IC 95%             | AURC     | Excess-AURC | p (Mann-Whitney) |
+| -------------------------------------------- | --------- | ------------------ | -------- | ----------- | ---------------- |
+| **KL congelada (`kl_t_v` max τ=1, capa 34)** | **0.661** | [0.522, 0.772]     | 0.1425   | 0.670       | 0.006            |
+| 1−MSP (baseline gratis)                      | 0.624     | [0.491, 0.739]     | 0.1536   | 0.732       | 0.026            |
+| entropy (baseline)                           | 0.624     | [0.491, 0.739]     | 0.1536   | 0.732       | 0.026            |
+| energy (baseline)                            | 0.560     | [0.432, 0.680]     | 0.1828   | 0.895       | 0.175            |
+| **Combinación rank(KL)+rank(1−MSP)**         | **0.698** | **[0.596, 0.787]** | **0.0955** | **0.407** | **0.001**        |
 
 Lectura honesta:
-- La KL sola **supera al azar con significancia** (su IC excluye 0.5) y cumple el objetivo del proyecto (≥ 0.65) justo.
+- La KL sola **supera al azar con significancia** (su IC excluye 0.5) y cumple el objetivo del proyecto (≥ 0.65) justo. También es la #1 entre las 97 variantes por Excess-AURC — las dos métricas coinciden.
 - La ventaja sobre el baseline gratis (1−MSP) es **modesta** (+0.037): la KL no reemplaza a la confianza del modelo, la complementa (sección 7).
+- **El AURC amplifica el veredicto sobre la combinación:** en Excess-AURC la combinación marca 0.407 vs 0.670 de la KL sola — 39% más cerca del oracle. El AURC premia acertar en la *cabeza* de la lista de derivación, que es donde la combinación es fuerte (57% de precisión en los 7 casos más inciertos vs 29% de la KL sola).
+- **Concordancia entre métricas:** Spearman(AUROC, Excess-AURC) = −0.51 sobre las variantes — se correlacionan moderadamente pero no son redundantes: AUROC evalúa el ranking global, AURC los puntos operativos de triage.
+- **Correlación entre señales** (Spearman, `figures/fig6_correlacion_senales.png`): KL⊥MSP = 0.27 (complementarias), KL⊥energy = −0.01 (totalmente independientes), entropy≡MSP = 1.00 (la misma señal), energy–MSP = 0.84 (redundantes — por eso energy no aporta).
 - En P4 (prompt con rol de oftalmólogo) todo es más débil: KL 0.614, MSP 0.629, combinación 0.654.
 
 **Triage (accuracy-coverage, P1):** si se deriva al oftalmólogo el 50% de casos con mayor u(x), la accuracy en el 50% que el modelo responde solo sube de **79.8% → 89.1%**.

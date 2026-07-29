@@ -343,6 +343,40 @@ def accuracy_coverage(y_correct: np.ndarray, signal: np.ndarray, steps: list[flo
 
 
 # ------------------------------------------------------------------------------
+# AURC / Excess-AURC (métrica de selective prediction, Geifman & El-Yaniv 2017)
+# ------------------------------------------------------------------------------
+def aurc(y_correct: np.ndarray, signal: np.ndarray) -> float:
+    """Área bajo la curva riesgo-cobertura (menor = mejor).
+
+    Ordena de menor a mayor u(x) (el modelo responde primero a los más seguros)
+    y promedia la tasa de error del subconjunto retenido para cada cobertura.
+    """
+    order = np.argsort(signal)  # menos incierto primero
+    y_err_sorted = 1 - y_correct[order]
+    n = len(y_err_sorted)
+    risks = [y_err_sorted[:k].mean() for k in range(1, n + 1)]
+    return float(np.mean(risks))
+
+
+def aurc_oracle(y_correct: np.ndarray) -> float:
+    """AURC del ranking perfecto (errores derivados primero)."""
+    y_err_sorted = np.sort(1 - y_correct)  # aciertos primero
+    n = len(y_err_sorted)
+    risks = [y_err_sorted[:k].mean() for k in range(1, n + 1)]
+    return float(np.mean(risks))
+
+
+def excess_aurc(y_correct: np.ndarray, signal: np.ndarray) -> dict[str, float]:
+    """Excess-AURC normalizado: 0 = oracle, 1 = azar (menor = mejor)."""
+    a = aurc(y_correct, signal)
+    a_oracle = aurc_oracle(y_correct)
+    a_random = float((1 - y_correct).mean())
+    norm = (a - a_oracle) / (a_random - a_oracle) if a_random > a_oracle else np.nan
+    return {"aurc": a, "aurc_oracle": a_oracle, "aurc_random": a_random,
+            "excess_aurc_norm": float(norm)}
+
+
+# ------------------------------------------------------------------------------
 # Análisis completo de una señal (ya como frame imagen × valor)
 # ------------------------------------------------------------------------------
 def analyze_frame(
@@ -382,6 +416,7 @@ def analyze_frame(
     result["mann_whitney"] = mann_whitney_effect(y_correct, signal)
     result["sens_80spec"] = sensitivity_at_specificity(y_correct, signal, target_spec=0.80)
     result["acc_cov"] = accuracy_coverage(y_correct, signal)
+    result["aurc"] = excess_aurc(y_correct, signal)
 
     if master is not None and "cdr_grade" in master.columns:
         merged = frame.merge(master[["image_filename", "cdr_grade"]], on="image_filename", how="left")
@@ -417,6 +452,10 @@ def print_signal_report(result: dict[str, Any]) -> None:
     s80 = result["sens_80spec"]
     print(f"Sensitivity@80%Spec: {s80['sensitivity']:.3f} (umbral={s80['threshold']:.4f})")
 
+    arc = result["aurc"]
+    print(f"AURC: {arc['aurc']:.4f} (oracle={arc['aurc_oracle']:.4f}, azar={arc['aurc_random']:.4f})"
+          f" | Excess-AURC norm: {arc['excess_aurc_norm']:.3f} (0=oracle, 1=azar)")
+
     if "h4_spearman" in result:
         h4 = result["h4_spearman"]
         print(f"H4 Spearman (CDR): rho={h4['rho']:.3f}, p={h4['p_value']:.4f} (n={h4['n']})")
@@ -435,6 +474,8 @@ def _summary_row(r: dict[str, Any], prompt: str) -> dict[str, Any]:
         "auprc": r["auprc"]["point"],
         "auprc_ci_low": r["auprc"]["ci_low"],
         "auprc_ci_high": r["auprc"]["ci_high"],
+        "aurc": r["aurc"]["aurc"],
+        "excess_aurc_norm": r["aurc"]["excess_aurc_norm"],
         "mannwhitney_p": r["mann_whitney"]["p_value"],
         "effect_size_r": r["mann_whitney"]["r"],
         "sens_80spec": r["sens_80spec"]["sensitivity"],

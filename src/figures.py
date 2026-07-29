@@ -36,6 +36,7 @@ from src.evaluation import (
     rank_combination_frame,
     select_winner,
     sensitivity_at_specificity,
+    excess_aurc,
     signal_frame,
 )
 
@@ -282,11 +283,14 @@ def table_t1(signals: dict[str, pd.DataFrame], out_path: Path) -> pd.DataFrame:
         auroc = roc_auc_score(y_error, vals)
         auprc = average_precision_score(y_error, vals)
         sens = sensitivity_at_specificity(1 - y_error, vals, target_spec=0.80)
+        arc = excess_aurc(1 - y_error, vals)
 
         rows.append({
             "Señal": name,
             "AUROC": f"{auroc:.3f}",
             "AUPRC": f"{auprc:.3f}",
+            "AURC": f"{arc['aurc']:.4f}",
+            "Excess-AURC": f"{arc['excess_aurc_norm']:.3f}",
             "Sens@80%Esp": f"{sens['sensitivity']:.3f}",
             "Costo": "1×",
         })
@@ -296,7 +300,8 @@ def table_t1(signals: dict[str, pd.DataFrame], out_path: Path) -> pd.DataFrame:
         base_acc = first["correct"].mean()
         rows.insert(0, {
             "Señal": f"Accuracy base del modelo ({base_acc:.3f})",
-            "AUROC": "—", "AUPRC": "—", "Sens@80%Esp": "—", "Costo": "—",
+            "AUROC": "—", "AUPRC": "—", "AURC": "—", "Excess-AURC": "—",
+            "Sens@80%Esp": "—", "Costo": "—",
         })
 
     t1 = pd.DataFrame(rows)
