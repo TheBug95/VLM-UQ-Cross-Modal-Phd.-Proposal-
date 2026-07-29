@@ -197,7 +197,7 @@ def fig4_accuracy_coverage(signals: dict[str, pd.DataFrame], out_path: Path) -> 
 
         order = np.argsort(-vals)  # más incierto primero
         coverages, accuracies = [], []
-        for coverage in np.linspace(0.5, 1.0, 20):
+        for coverage in np.linspace(0.0, 1.0, 26):
             n_keep = int(np.ceil(n_valid * coverage))
             # retenemos los MENOS inciertos: los últimos del orden descendente
             keep = order[n_valid - n_keep:]
@@ -214,6 +214,7 @@ def fig4_accuracy_coverage(signals: dict[str, pd.DataFrame], out_path: Path) -> 
 
     ax.set_xlabel("Cobertura (fracción de casos respondidos)")
     ax.set_ylabel("Accuracy del modelo")
+    ax.set_xlim(0, 1)
     ax.set_title("Fig 4: Accuracy vs. Coverage\n(derivando el X% más incierto; AURC = área bajo 1−accuracy)")
     ax.legend(loc="lower right", fontsize=7)
     ax.grid(True, alpha=0.3)
