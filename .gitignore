@@ -31,8 +31,8 @@ env.bak/
 venv.bak/
 
 # Datos y resultados (no subir dataset; results y figures sí se versionan)
-data/mm_odir_129
-data/desktop.ini
+data/
+*.csv
 *.tsv
 
 # Modelos y checkpoints
@@ -90,3 +90,5 @@ temp/
 # HuggingFace cache
 .cache/
 huggingface/
+# Obsidian
+.obsidian/

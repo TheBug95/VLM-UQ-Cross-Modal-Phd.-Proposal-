@@ -111,8 +111,8 @@ La infraestructura de configuración y la tabla maestra ya existen (`src/config.
    - máscara por ID de token de imagen (¡nunca slicing fijo `[:, :256, :]`!);
    - 1 paso de decode greedy para logits de "yes"/"no" y hidden state del token de respuesta.
 4. **`src/uncertainty.py`** — pooling ponderado por ROI (máscaras de disco, *oracle*), pooling ponderado por **atención cruzada** (deployable, sin máscaras externas) y heatmaps de atención. Responde a la crítica de *dilución espacial* (disco óptico = 5–10% de la imagen). **Regla numérica dura (detectada en val_07, 23-jul-2026):** la KL/JSD sobre hidden states se computa SIEMPRE con `F.log_softmax` en **float64** tras **z-score normalization** — las *massive activations* de Gemma colapsan `softmax` a distribuciones degeneradas incluso en float64. JSD = `scipy.spatial.distance.jensenshannon` **al cuadrado** (devuelve distancia, no divergencia). Computa además los baselines de igual costo (entropy, MSP, energy, TS) y el baseline 2× verbalized confidence (P5: parsing directo del número 0–100; u(x)=1−conf/100; solo sobre P1).
-5. **`src/evaluation.py`** — AUROC, AUPRC y comparación de variantes (mean/max vs. roi). Bootstrap CI (9.999 remuestreos BCa), DeLong (exploratorio), Mann-Whitney + effect size, Spearman (H4), curvas accuracy-coverage y robustez sin artefactos quedan como extensión.
-6. **`src/figures.py`** — generación de Figuras 1–5 y Tablas 1–3.
+5. **`src/evaluation.py`** — análisis estadístico sobre el CSV en **formato largo** (implementado, 29-jul-2026). Selección de la variante ganadora SOLO en train (excluye poolings oracle), bootstrap CI BCa (9.999 remuestreos) para AUROC/AUPRC, Mann-Whitney + effect size, Spearman con permutación (H4), sensitivity@80%spec, curvas accuracy-coverage, baselines de igual costo (entropy, 1-MSP, energy) y señal combinada `rank(KL)+rank(1-MSP)` (sin parámetros). `--all-signals` para tabla rápida de AUROC por variante. Guarda `results/evaluation_summary.csv`.
+6. **`src/figures.py`** — Figuras 2–5 y Tablas 1–3 sobre formato largo (reusa helpers de `src.evaluation`; la ganadora se elige en train o se pasa con `--signal`). Fig 2 boxplot, Fig 3 ROC/PR, Fig 4 accuracy-coverage, Fig 5 cuadrantes; T1 resultados, T2 ablaciones (groupby directo en formato largo), T3 comparativa de la literatura.
 7. **`results/results_full.csv`** — CSV central (una fila por imagen × prompt; esquema en §6.3). **Escritura incremental (append) para reanudabilidad.**
 
 **Volumen de cómputo:** 129 imágenes × 2 prompts = 258 inferencias ≈ 10–20 min de GPU. La reanudabilidad es buena práctica pero ya no es crítica.
@@ -139,20 +139,19 @@ La infraestructura de configuración y la tabla maestra ya existen (`src/config.
 - **Generación:** `model.generate(..., max_new_tokens=1, do_sample=False, output_hidden_states=True, output_scores=True, return_dict_in_generate=True)` bajo `torch.inference_mode()`, dtype `bfloat16`, `device_map="auto"`.
 - **Imagen:** pasar por el `AutoProcessor` tal cual (él hace resize 896×896 y normalización) — sin preproceso manual; CLAHE quedó fuera del alcance mínimo.
 
-### 6.3 Esquema de `results_full.csv` (una fila por imagen × prompt)
+### 6.3 Esquema de `results_full.csv` (FORMATO LARGO, una fila por imagen × prompt × variante)
 
 ```
 image_filename, patient_id, prompt_id (P1|P4), split,
-logit_yes, logit_no, p_yes, pred (0|1), label (0|1), correct (0|1),
-entropy_answer, msp_answer, energy_answer,
-verbalized_conf (0–100; baseline 2×, solo P1),
-kl_v_t_L{17|26|34}_tau{1|2|4}_{mean|max},        # 18 columnas
-kl_t_v_L{17|26|34}_tau{1|2|4}_{mean|max},        # 18 columnas
-jsd_L{17|26|34}_tau{1|2|4}_{mean|max},           # 18 columnas
-kl_prompt_L34_tau1_mean (ablación imagen↔prompt),
-inference_ms
+logit_yes, logit_no, p_yes, pred (0|1), entropy_answer, msp_answer, energy_answer,
+label (0|1), correct (0|1), inference_ms,
+signal_type (kl_v_t|kl_t_v|jsd|cosine|kl_prompt_L34),
+layer (solo 34; las capas 17/26 colapsan numéricamente),
+tau (1.0|2.0|4.0),
+pooling (mean|max|roi|attn|topk|normw|rollout|headspec),
+value
 ```
-Las 54 columnas de variantes se guardan en la MISMA pasada: las ablaciones son análisis sobre tabla, no re-cómputo. La variante final "nuestro método" se elige SOLO con el split train y se reporta congelada.
+~23.600 filas (129 imágenes × 2 prompts × variantes). Las columnas de observación (logits, baselines, label) se repiten en cada fila de la misma observación; las señales viven en `value`. Todas las variantes se guardan en la MISMA pasada: las ablaciones son análisis sobre tabla, no re-cómputo. La variante final "nuestro método" se elige SOLO con el split train y se reporta congelada (ganadora en la corrida completa: `kl_t_v` capa 34, τ=1, pooling `max`). Nota: las filas `kl_prompt_L34` quedaron con layer/tau desalineados en el CSV; `src.evaluation.load_results()` las normaliza al cargar (fix pendiente en `src.inference`).
 
 ### 6.4 Self-consistency (baseline multi-pass)
 
@@ -306,6 +305,7 @@ No hay framework de testing configurado. El diseño impone **8 sanity checks** q
 - **Se computan ambas direcciones de KL y JSD** en la misma pasada (54 columnas de variantes); la variante reportada se elige solo con train.
 - **El objetivo de éxito:** AUROC ≥ 0.65 en detección de errores con IC bootstrap 95% reportado honestamente (con N=129 el IC es ancho: ±0.10–0.13 — lenguaje de "evidencia fuerte" vs. "sugestiva" según si excluye 0.5). H4: correlación Spearman positiva entre u(x) y `cdr_grade` en los 69 patológicos.
 - **Punto Go/No-Go:** día 4, al terminar la estadística principal. Si H0 no se rechaza, seguir el plan de contingencia de la Sección 8.3 de la definición.
+- **Robustez numérica verificada (29-jul-2026, `validacion/val_08_resultados.py` + forward manual de las 129 imágenes en GPU distinta):** los logits son **bitwise reproducibles** entre GPUs (0/129 predicciones cambian). La KL está **winsorizada** en ln(1/eps)=23.03 (`epsilon: 1.0e-10` en `config.yaml`; 53/129 imágenes en el techo — esto es por diseño, no un bug). ⚠️ Un `epsilon` distinto desplaza TODOS los valores de KL en una constante (ln del ratio de eps): mantener `epsilon` fijo entre corridas y no comparar valores absolutos entre corridas con eps distinto. Ruido real entre GPUs/backends ≈ 0.4 nats; ranking estable (Spearman 0.964, ΔAUROC 0.016). Reglas: derivación clínica por percentil de la cohorte (nunca umbral absoluto de nats); reportar solo métricas de ranking (AUROC/AUPRC).
 
 ### 11.1 Métodos de explicación considerados y descartados como señal UQ
 
