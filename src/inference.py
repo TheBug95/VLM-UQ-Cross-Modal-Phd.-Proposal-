@@ -469,11 +469,20 @@ class MedGemmaInference:
         image: Image.Image,
         prompt_id: str,
         n_samples: int = 10,
-        temperature: float = 0.7,
+        temperature: float = 1.5,
     ) -> dict[str, Any]:
-        """Muestrea n respuestas a temperatura T y devuelve la fracción de 'yes'."""
+        """Muestrea n respuestas a temperatura T y devuelve la fracción de 'yes'.
+
+        IMPORTANTE (bug corregido 29-jul-2026): el voto usa el token
+        REALMENTE MUESTREADO (out.sequences), no los logits — comparar logits
+        tras muestrear hace las 10 "muestras" idénticas (frac_yes ∈ {0,1},
+        entropía 0, AUROC 0.5). Además, T=0.7 (diseño original) AFILA la
+        distribución (T<1 ⇒ logits×1.43); con p_yes mediana ≈ 0.9999 en este
+        dataset, se requiere T ≥ 1 para que el voto varíe.
+        """
         prompt = self.build_prompt(prompt_id)
         inputs = self.processor(images=image, text=prompt, return_tensors="pt").to(self.device)
+        yes_id = self.cfg.tokens.yes
 
         yes_count = 0
         with torch.inference_mode():
@@ -483,21 +492,18 @@ class MedGemmaInference:
                     max_new_tokens=1,
                     do_sample=True,
                     temperature=temperature,
-                    output_scores=True,
                     return_dict_in_generate=True,
                 )
-                scores0 = out.scores[0]
-                logit_yes = float(scores0[0, self.cfg.tokens.yes].item())
-                logit_no = float(scores0[0, self.cfg.tokens.no].item())
-                if logit_yes > logit_no:
+                sampled_id = int(out.sequences[0, inputs["input_ids"].shape[1]].item())
+                if sampled_id == yes_id:
                     yes_count += 1
 
         frac_yes = yes_count / n_samples
-        # Entropía de la frecuencia como u(x)
+        # Entropía de la frecuencia como u(x) (clamp a 0 por ruido flotante)
         eps = self.cfg.uncertainty.epsilon
-        entropy_sc = -(
+        entropy_sc = max(0.0, -(
             frac_yes * np.log(frac_yes + eps) + (1 - frac_yes) * np.log(1 - frac_yes + eps)
-        )
+        ))
         return {
             "self_consistency_frac_yes": frac_yes,
             "self_consistency_entropy": float(entropy_sc),
@@ -892,11 +898,13 @@ def run_full(cfg: Config, with_attentions: bool = False, seed: int | None = None
 # ------------------------------------------------------------------------------
 # Self-consistency (50 imágenes × 10 muestras)
 # ------------------------------------------------------------------------------
-def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10, seed: int | None = None) -> None:
+def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10,
+                         seed: int | None = None, temperature: float = 1.5) -> None:
     """Ejecuta el baseline multi-pass sobre un subconjunto estratificado.
 
     Si seed se pasa, se usa para la selección del subconjunto y se añade como
-    columna a los resultados.
+    columna a los resultados. temperature default 1.5 (0.7 del diseño original
+    afila la distribución: T<1 ⇒ voto unánime en respuestas binarias saturadas).
     """
     master = pd.read_csv(cfg.paths.master_table)
     random_state = seed if seed is not None else cfg.experiment.seed
@@ -909,13 +917,13 @@ def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10, s
     pipeline = MedGemmaInference(cfg)
     pipeline.load()
 
-    print(f"[sc] {len(subset)} imágenes × {n_samples} muestras × 2 prompts")
+    print(f"[sc] {len(subset)} imágenes × {n_samples} muestras × 2 prompts | T={temperature}")
 
     for _, row in subset.iterrows():
         img = load_image(cfg, row["image_filename"], row["split"])
         for prompt_id in ["p1", "p4"]:
             signals = pipeline.infer_self_consistency(
-                img, prompt_id, n_samples=n_samples, temperature=0.7
+                img, prompt_id, n_samples=n_samples, temperature=temperature
             )
             record = {
                 "image_filename": row["image_filename"],
@@ -1045,6 +1053,8 @@ def main() -> None:
                         help="Extraer atenciones cruzadas y generar heatmaps (piloto)")
     parser.add_argument("--seeds", type=int, nargs="+", default=None,
                         help="Lista de semillas para repeticiones (p. ej. --seeds 42 123 456)")
+    parser.add_argument("--sc-temp", type=float, default=1.5,
+                        help="Temperatura de muestreo para --self-consistency (default 1.5)")
     args = parser.parse_args()
 
     cfg = Config()
@@ -1058,7 +1068,7 @@ def main() -> None:
         elif args.run_full:
             run_with_seeds(cfg, args.seeds, mode="full", with_attentions=args.attentions)
         elif args.self_consistency:
-            run_with_seeds(cfg, args.seeds, mode="self-consistency")
+            run_with_seeds(cfg, args.seeds, mode="self-consistency", temperature=args.sc_temp)
         else:
             print("Uso: python -m src.inference [--pilot | --run-full | --self-consistency] --seeds 42 123 456")
         return
@@ -1070,7 +1080,7 @@ def main() -> None:
     elif args.run_full:
         run_full(cfg, with_attentions=args.attentions)
     elif args.self_consistency:
-        run_self_consistency(cfg)
+        run_self_consistency(cfg, temperature=args.sc_temp)
     elif args.verbalized:
         run_verbalized(cfg)
     else:

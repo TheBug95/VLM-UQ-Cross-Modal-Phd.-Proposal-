@@ -155,7 +155,7 @@ value
 
 ### 6.4 Self-consistency (baseline multi-pass)
 
-50 imágenes (subconjunto estratificado por clase) × 10 muestras a temperatura 0.7 → fracción de "sí" → entropía como u(x). Se implementa como flag separado (`--self-consistency`) para no mezclar muestreo con la pasada determinista principal.
+50 imágenes (subconjunto estratificado por clase) × 10 muestras a temperatura **1.5** (no 0.7: T<1 *afila* la distribución y con p_yes mediana ≈ 0.9999 el voto queda unánime — detectado 29-jul-2026 junto con un bug que comparaba logits en vez del token muestreado, lo que producía AUROC 0.5; corregido en `infer_self_consistency`) → fracción de "sí" → entropía como u(x). Se implementa como flag separado (`--self-consistency`, `--sc-temp` para la temperatura) para no mezclar muestreo con la pasada determinista principal.
 
 ---
 
