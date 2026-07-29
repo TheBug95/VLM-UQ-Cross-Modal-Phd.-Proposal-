@@ -417,10 +417,19 @@ def main() -> None:
     frame_winner = signals[f"KL cross-modal ({winner})"]
     obs_prompt = df[df["prompt_id"] == args.prompt]
 
-    fig2_boxplot(frame_winner, winner, out_dir / "fig2_boxplot.png")
-    rc_key = "rank(KL) + rank(1-MSP)"
-    if rc_key in signals:
-        fig2_boxplot(signals[rc_key], rc_key, out_dir / "fig2_boxplot_rankcombo.png")
+    # Fig 2: un boxplot por señal
+    slugs = {
+        f"KL cross-modal ({winner})": "kl",
+        "Entropy": "entropy",
+        "1 - MSP": "1msp",
+        "Energy": "energy",
+        "rank(KL) + rank(1-MSP)": "rankcombo",
+    }
+    for name, frame in signals.items():
+        slug = slugs.get(name, "signal")
+        suffix = "" if slug == "kl" else f"_{slug}"
+        fig2_boxplot(frame, name, out_dir / f"fig2_boxplot{suffix}.png")
+
     fig3_roc_pr(signals, out_dir / "fig3_roc_pr.png")
     fig4_accuracy_coverage(signals, out_dir / "fig4_accuracy_coverage.png")
     fig5_quadrants(obs_prompt, frame_winner, master, winner, out_dir / "fig5_quadrants.png")
