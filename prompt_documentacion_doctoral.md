@@ -21,12 +21,12 @@ Eres un investigador doctoral en Inteligencia Artificial Médica. Tu tarea es ge
 **Estado:** El experimento está **completo con todos los baselines**. Tenemos:
 - Pipeline de inferencia implementado y verificado (`src/inference.py`)
 - 129 imágenes × 2 prompts = 258 inferencias deterministas ejecutadas
-- 98 variantes de señales de incertidumbre evaluadas (KL, JSD, coseno × capas × temperaturas × 8 estrategias de pooling)
+- 97 variantes de señales de incertidumbre evaluadas (KL, JSD, coseno × temperaturas × 8 estrategias de pooling + kl_prompt)
 - **Verbalized Confidence (P5):** 129 inferencias extra (2×), baseline de confianza declarada
 - **Self-Consistency (SC):** 50 imágenes × 10 muestras × 2 prompts a T=1.5 (10×), baseline multi-pass
 - Figuras del paper generadas (Fig 2-9: boxplots, ROC/PR, accuracy-coverage, cuadrantes, costo-vs-AUROC, verbalized degeneracy, SC boxplots)
-- Tablas de resultados (T1 resultados principales, T2 ablaciones 98 variantes, T3 comparativa con literatura, **T4 costo-beneficio**)
-- Evaluación estadística completa (AUROC con BCa bootstrap, Mann-Whitney U, Spearman H4)
+- Tablas de resultados (T1 resultados principales, T2 ablaciones 97 variantes, T3 comparativa con literatura, **T4 costo-beneficio**)
+- Evaluación estadística completa (AUROC con BCa bootstrap, Mann-Whitney U, Spearman H4, **AURC/Excess-AURC** de selective prediction, **Monte Carlo CV** para generalización)
 
 ### Resultados Principales Obtenidos
 
@@ -37,15 +37,35 @@ Estos son los **datos reales verificados** del experimento. Úsalos textualmente
 **Señal ganadora:** `kl_t_v_L34_tau1.0_max` (KL del token de respuesta hacia los tokens de imagen, capa 34, temperatura 1.0, max pooling)
 - AUROC = 0.661 [0.522, 0.772] (BCa 95%, 9999 remuestreos)
 - AUPRC = 0.329 [0.183, 0.478]
+- AURC = 0.1425 | Excess-AURC = 0.670 (0=oracle, 1=azar)
 - Mann-Whitney U: p = 0.0057, effect size r = 0.223
 - Sensitivity @ 80% Specificity = 0.423
 
 **Señal combinada** `rank(KL) + rank(1-MSP)` **(CONTRIBUCIÓN ORIGINAL — sin precedente en la literatura)**:
 - AUROC = 0.698 [0.596, 0.787]
 - AUPRC = 0.375 [0.228, 0.545]
+- **AURC = 0.0955 | Excess-AURC = 0.407** — 39% más cerca del oracle que la KL sola (0.670); el AURC es donde más domina la combinación (premia la pureza de la cabeza de la lista de derivación)
 - Mann-Whitney U: p = 0.00096
 - Mejora de +5.5% AUROC sobre KL sola y +11.9% sobre 1-MSP sola
 - **Originalidad:** La fusión por ranks de una señal de espacio de representaciones internas (KL cross-modal) con una señal de espacio de salida (1-MSP) es nueva. No existe paper previo que combine estas dos familias de señales UQ de esta manera. La técnica de rank aggregation per se viene de IR (Cormack 2009), pero su instanciación aquí es original.
+
+**Dirección espejo KL (siempre reportada junto a la ganadora):** `kl_v_t_L34_tau1.0_max`
+- AUROC = 0.566 [0.433, 0.693] | AUPRC = 0.293 | Excess-AURC = 0.800 | p = 0.1487 (no significativa)
+- **Justificación de la dirección (reporte §6.1):** KL(texto‖imagen) mide "¿el texto afirma lo que la imagen no respalda?" (dirección de la alucinación → señal del error). KL(imagen‖texto) mide "¿la imagen contiene lo que el texto no menciona?" — pero una retinografía siempre contiene más que un sí/no, así que esa dirección es ruido casi constante. La ablación exhaustiva de fusión (8 poolings × 3 τ × 6 fusiones) confirma que mezclar ambas direcciones solo diluye la señal.
+
+**H4 (correlación con severidad): RECHAZADA**
+- Spearman rho = +0.001, p = 0.99 (permutación, n=69 patológicas)
+- La señal detecta errores del modelo, NO la severidad del glaucoma. Reportar como resultado negativo.
+
+**Resultados P4 (prompt con system prompt de oftalmólogo):**
+- KL: AUROC = 0.614 | 1-MSP: 0.629 | combinación: 0.654 — todo más débil que P1
+
+**Generalización honesta (Monte Carlo CV, 200 splits aleatorios estratificados):**
+- Selección anidada (seleccionar variante en cada train fold): AUROC = 0.581 ± 0.116
+- Variante congelada en los mismos test folds: 0.660 ± 0.071
+- Combinación por ranks: 0.698 ± 0.062 (KL congelada) / 0.648 ± 0.087 (re-selección anidada)
+- val+test oficial (52 imgs, solo 6 errores): 0.569 [0.200, 0.938] — sin poder estadístico
+- Interpretación: el desempeño real en pacientes nuevos está probablemente en ~0.58–0.66 para la KL sola; la combinación es la más robusta entre splits.
 
 **Baselines de igual costo (single-pass, 1×):**
 | Señal | AUROC | AUPRC | Mann-Whitney p |
@@ -74,19 +94,29 @@ Estos son los **datos reales verificados** del experimento. Úsalos textualmente
 | SC entropía binaria | 10× | 0.573 |
 | SC entropía 3-vías | 10× | 0.552 |
 
+*Nota metodológica: en esta tabla, `correct` se toma de la corrida greedy principal para TODAS las señales (el modelo desplegado). Con `correct` del voto SC, la KL da 0.772 en vez de 0.781 — documentar el criterio usado (greedy) y no mezclar conjuntos de evaluación (50 vs 129) en una misma tabla sin etiquetar, como hace la T4 con su columna "Evaluation set".*
+
 **Hallazgos clave de los baselines multi-pass:**
 - **Verbalized Confidence:** MedGemma solo declara 2 valores de confianza: 90% (n=11) y 95% (n=118). La señal es casi constante → AUROC 0.519 (≈azar). Sobreconfianza extrema: declara 95% pero accuracy real = 80.5%.
 - **Self-Consistency a T=1.5:** La mayoría de muestras generan tokens fuera de formato ("based", "i", "the", "it") en vez de "yes"/"no". `frac_other` (fracción de respuestas fuera de formato) es la mejor señal SC (AUROC 0.655) pero inferior a KL (1×). La entropía binaria sí/no es casi nula (el modelo casi nunca dice "no" al muestrear).
 - **Dominancia Pareto:** KL cross-modal (1×) domina a TODOS los baselines multi-pass (10×) en AUROC con 10× menos cómputo.
 
-**Accuracy-Coverage (derivando el X% más incierto):**
-| Cobertura | Accuracy KL | n retenidos |
-|-----------|-------------|-------------|
-| 95% | 80.3% | 122 |
-| 90% | 81.0% | 116 |
-| 80% | 83.5% | 103 |
-| 70% | 84.4% | 90 |
-| 50% | 89.1% | 64 |
+**Accuracy-Coverage (derivando el X% más incierto, rango completo 0–1):**
+| Cobertura | Accuracy KL | Accuracy combinación | n retenidos |
+|-----------|-------------|----------------------|-------------|
+| 100% | 79.8% | 79.8% | 129 |
+| 95% | 80.3% | 82.0% | 122 |
+| 90% | 81.0% | 81.9% | 116 |
+| 80% | 83.5% | 81.6% | 103 |
+| 70% | 84.4% | 82.2% | 90 |
+| 50% | 89.1% | 89.1% | 64 |
+| 30% | — | **100%** | 39 |
+
+**Zona verde (hallazgo clínico clave, verificado en `results/verificacion_zona_verde.py`):**
+- Los **39 casos menos inciertos de la combinación (30.2% de la cohorte) son TODOS correctos** — el primer error aparece en la posición 40 del ranking
+- Las posiciones de los 26 errores en el ranking: [40, 46, 50, 51, 60, 62, 63, 69, 70, 78, 79, 80, 81, 85, 86, 89, 97, 98, 103, 104, 105, 119, 123, 125, 128, 129]
+- Advertencias obligatorias al reportarla: la frontera es suave (Δu=0.004 entre posiciones 39 y 40) y la medida es in-sample (IC 95% de la tasa de error en la zona hasta ~7.7% por regla de tres)
+- Lectura clínica de 3 zonas: auto-responder la cola (~30% sin errores en esta cohorte), derivar la cabeza (los ~7 más inciertos tienen 57% de precisión), zona gris al especialista
 
 **Datos del modelo:**
 - Modelo: `google/medgemma-4b-it` (MedGemma 4B, basado en Gemma 3)
@@ -104,32 +134,42 @@ Estos son los **datos reales verificados** del experimento. Úsalos textualmente
 - 7 gradings ordinales de glaucoma por imagen patológica (CDR 0-4, neuroretinal rim, etc.)
 - 69 imágenes con máscaras de segmentación de copa/disco
 
+**Verificación y robustez numérica (trabajo propio, documentar como fortaleza):**
+- `validacion/val_08_resultados.py`: 19 checks independientes del pipeline (sin reutilizar código del pipeline) — invariantes del CSV, AUROC/AUPRC recomputados a mano sin sklearn (coincidencia exacta al 6º decimal), identidad AUROC≡U/(n_e·n_c), kl_div contra Σ p·ln(p/q) manual. 19/19 PASS.
+- **KL winsorizada:** el clamp `eps=1e-10` pone un techo a la KL en ln(1/eps)=23.03; 53 de 129 imágenes están en el techo. Es por diseño (recorta la cola numéricamente ruidosa) — el AUROC con techo 1e-10 (0.661) es ligeramente mejor que con 1e-12 (0.645). Un eps distinto desplaza TODOS los valores en una constante: mantener epsilon fijo entre corridas.
+- **Robustez entre GPUs:** logits bitwise idénticos (0/129 predicciones cambian); ranking KL estable (Spearman 0.964, AUROC 0.645 vs 0.661 entre GPUs).
+- **Regla de reporte:** la derivación clínica se define por PERCENTIL de la cohorte, nunca por umbral absoluto de nats (los valores absolutos no son portables entre eps/hardware).
+- **Matiz del softmax restringido:** p_yes y el MSP se computan como softmax sobre SOLO los 2 logits (yes/no) — es un score binario, NO una probabilidad calibrada sobre el vocabulario completo (el SC a T=1.5 reveló masa fuera de yes/no: muestras "based", "i"). Para ranking/UQ es válido; no llamarla "probabilidad calibrada" en el paper.
+- Tiempo de inferencia: ~4.5 s por imagen (corrida completa 258 inferencias ≈ 10–20 min de GPU).
+
 ### Estructura del Código Fuente (ya implementado)
 
 ```
 src/
 ├── config.py      — Carga centralizada de config.yaml, resolución de Token IDs desde HF
 ├── data.py        — Descarga MM-ODIR-129, construye master_table.csv, auditoría de artefactos
-├── inference.py   — Pipeline MedGemma: logits yes/no, hidden states, 98 variantes KL/JSD/coseno + verbalized (P5) + self-consistency (SC)
+├── inference.py   — Pipeline MedGemma: logits yes/no, hidden states, 97 variantes KL/JSD/coseno + verbalized (P5) + self-consistency (SC)
 ├── uncertainty.py — 8 estrategias de pooling: mean, max, roi, attn, topk, normw, rollout, headspec
 ├── evaluation.py  — AUROC/AUPRC BCa, Mann-Whitney, Spearman H4, accuracy-coverage, baselines
 └── figures.py     — Generación de figuras 2-9 y tablas T1-T4 del paper
 ```
 
-### Figuras Disponibles (ya generadas)
+### Figuras Disponibles (ya generadas, TODAS EN INGLÉS)
 
-Las siguientes figuras están en la carpeta `figures/` del proyecto. **DEBES copiarlas a `Documentacion/assets/` y embederlas** con `![descripción](assets/nombre.png)` en cada documento donde correspondan:
+Las siguientes figuras están en la carpeta `figures/` del proyecto. **DEBES copiarlas a `Documentacion/assets/` y embederlas** con `![descripción](assets/nombre.png)` en cada documento donde correspondan. Nota: las figuras están en inglés (convención de publicación); el texto de los documentos va en español:
 
 1. `fig2_boxplot.png` — Boxplot de KL cross-modal: correctos vs. incorrectos (p=0.0057)
-2. `fig2_boxplot_entropy.png`, `fig2_boxplot_1msp.png`, `fig2_boxplot_energy.png`, `fig2_boxplot_rankcombo.png` — Boxplots de cada baseline
-3. `fig3_roc_pr.png` — Curvas ROC y Precision-Recall de todas las señales
-4. `fig4_accuracy_coverage.png` — Accuracy vs. Coverage (derivando el X% más incierto)
-5. `fig5_quadrants.png` — Ejemplos de cuadrantes (correcto+baja u, correcto+alta u, error+alta u, error+baja u) con transcripciones clínicas
-6. `fig6_correlacion_senales.png` — Correlación entre señales
-7. `fig7_costo_vs_auroc.png` — **NUEVA:** Scatter de costo computacional (1×, 2×, 10×) vs. AUROC. Panel izquierdo: cohorte 129, panel derecho: subconjunto SC 50. Demuestra dominancia Pareto de KL (1×) sobre baselines multi-pass (10×)
-8. `fig8_verbalized.png` — **NUEVA:** Panel izquierdo: distribución de confianza declarada (solo 2 valores: 90 y 95, n=11 y n=118). Panel derecho: calibración declarada vs. real (sobreconfianza: dice 95% pero acierta 80.5%)
-9. `fig9_sc_boxplots.png` — **NUEVA:** Boxplots correcto/incorrecto de SC frac_other (AUROC=0.655, p=0.054) y entropía 3-vías (AUROC=0.552, p=0.294)
-10. `heatmap_2472_right.png`, `heatmap_2759_left.png`, `heatmap_3086_right.png` — Heatmaps de atención sobre fundus reales
+2. `fig2_boxplot_klvt.png` — **NUEVA:** Boxplot de la dirección espejo KL(v‖t) (AUROC 0.566, p=0.149 n.s.) — evidencia de la justificación de dirección
+3. `fig2_boxplot_entropy.png`, `fig2_boxplot_1msp.png`, `fig2_boxplot_energy.png`, `fig2_boxplot_rankcombo.png` — Boxplots de cada baseline y de la combinación
+4. `fig3_roc_pr.png` — Curvas ROC y Precision-Recall de todas las señales (incluye espejo y combinación)
+5. `fig4_accuracy_coverage.png` — Accuracy vs. Coverage (rango 0–1, con AURC/Excess por señal; muestra la zona verde del 30%)
+6. `fig5_quadrants.png` — Ejemplos de cuadrantes (correcto+baja u, correcto+alta u, error+alta u, error+baja u) con transcripciones clínicas
+7. `fig6_correlacion_senales.png` — Correlación Spearman entre señales (KL⊥MSP=0.27, energy-MSP=0.84)
+8. `fig7_costo_vs_auroc.png` — Scatter de costo computacional (1×, 2×, 10×) vs. AUROC. Panel izquierdo: cohorte 129, panel derecho: subconjunto SC 50. Demuestra dominancia Pareto de KL (1×) sobre baselines multi-pass (10×)
+9. `fig8_verbalized.png` — Panel izquierdo: distribución de confianza declarada (solo 2 valores: 90 y 95, n=11 y n=118). Panel derecho: calibración declarada vs. real (sobreconfianza: dice 95% pero acierta 80.5%)
+10. `fig9_sc_boxplots.png` — Boxplots correcto/incorrecto de SC frac_other (AUROC=0.655, p=0.054) y entropía 3-vías (AUROC=0.552, p=0.294)
+11. `heatmap_2472_right.png`, `heatmap_2759_left.png`, `heatmap_3086_right.png` — Heatmaps de atención sobre fundus reales
+12. `fig1_pipeline.png` — Diagrama del pipeline (para el marco teórico/arquitectura)
 
 ### Instrucciones de Generación
 
@@ -260,18 +300,29 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
   - Discutir la complementariedad empírica: KL detecta errores que MSP no detecta y viceversa
   - Explicar por qué rank fusion es superior a suma directa (incompatibilidad de escalas KL~22 vs MSP~0-1)
 - §6.6 Accuracy-Coverage (aplicación clínica):
-  - **EMBEDER** `fig4_accuracy_coverage.png`
+  - **EMBEDER** `fig4_accuracy_coverage.png` (rango completo 0–1, con AURC/Excess por señal)
   - Tabla de accuracy por nivel de cobertura (datos reales)
-  - Interpretación clínica: derivando el 30% más incierto, accuracy sube de 79.8% a 84.4%
+  - **Zona verde (hallazgo clave):** los 39 casos menos inciertos de la combinación (30.2%) son todos correctos; primer error en la posición 40 del ranking. Incluir las advertencias: frontera suave (Δu=0.004), medida in-sample (IC hasta ~7.7% por regla de tres)
+  - Interpretación clínica de 3 zonas: auto-responder cola, derivar cabeza (57% precisión en top-7), zona gris al especialista
+- §6.6b AURC / Excess-AURC (segunda métrica):
+  - Explicar la métrica (Geifman & El-Yaniv 2017, selective prediction): 0=oracle, 1=azar
+  - Combinación 0.407 vs KL 0.670 vs MSP 0.732: la combinación domina 39% más cerca del oracle
+  - Concordancia entre métricas: Spearman(AUROC, Excess-AURC) = −0.51 sobre las 97 variantes
 - §6.7 Análisis cualitativo:
   - **EMBEDER** `fig5_quadrants.png`: ejemplos de cuadrantes con transcripciones
   - Discusión de los 4 cuadrantes
 - §6.8 Heatmaps de atención:
   - **EMBEDER** los 3 heatmaps: `heatmap_2472_right.png`, `heatmap_2759_left.png`, `heatmap_3086_right.png`
   - Análisis de dónde mira el modelo
-- §6.9 Confirmación en val+test:
-  - AUROC = 0.569 [0.200, 0.938] — alta varianza por n=52 (solo 6 errores)
-  - Discusión honesta de la limitación estadística
+- §6.9 Generalización: val+test y Monte Carlo CV:
+  - val+test oficial: AUROC = 0.569 [0.200, 0.938] — alta varianza por n=52 (solo 6 errores)
+  - Monte Carlo CV (200 splits): anidado 0.581 ± 0.116 | congelada 0.660 ± 0.071 | combinación 0.698 ± 0.062 (0.648 ± 0.087 anidada)
+  - Discusión honesta: la generalización de la KL sola está en ~0.58–0.66; la combinación es la más robusta entre splits
+- §6.9b Justificación de la dirección KL (datos de ambas, siempre):
+  - KL(texto‖imagen) 0.661/p=0.006 vs KL(imagen‖texto) 0.566/p=0.149 (n.s.)
+  - Interpretación: t→v mide alucinación (texto no respaldado por la imagen); v→t mide riqueza trivial imagen>texto (constante, ruido)
+  - **EMBEDER** `fig2_boxplot_klvt.png`: la espejo tiene dispersión enorme (9–23 nats) y cajas superpuestas
+  - Ablación exhaustiva de fusión (8 poolings × 3 τ × 6 fusiones): mezclar direcciones solo diluye
 - §6.10 Baselines multi-pass:
   - §6.10.1 Verbalized Confidence (P5, 2×):
     - AUROC = 0.519 (≈ azar) — la señal es casi inútil
@@ -290,7 +341,7 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
     - **EMBEDER** `fig7_costo_vs_auroc.png`: scatter costo (1×/2×/10×) vs. AUROC
     - **Resultado central:** KL cross-modal (1×) domina a TODOS los baselines multi-pass en el gráfico Pareto
     - En comparación justa (50 imgs del subconjunto SC): KL (1×) AUROC = 0.781 vs. SC frac_other (10×) = 0.655
-    - Tabla T4 con datos reales de los 12 métodos evaluados
+    - Tabla T4 con datos reales (5 métodos en cohorte 129 + 6 en subconjunto SC 50 — no mezclar conjuntos de evaluación en una misma tabla sin etiquetar)
 - §6.11 Tabla T2 de ablaciones:
   - Top-20 variantes ordenadas por AUROC
   - Análisis de tendencias: max > mean, τ=1 > τ>1, kl_t_v > kl_v_t
@@ -303,7 +354,10 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
 ### 📄 07_Ablaciones_y_Analisis_Profundo.md
 **Ablaciones detalladas** (~3000 palabras). Incluye:
 - §7.1 Efecto del tipo de divergencia: KL vs. JSD vs. Coseno
-  - ¿Por qué KL(p_text || p_vis) supera a KL(p_vis || p_text)?
+  - ¿Por qué KL(p_text || p_vis) supera a KL(p_vis || p_text)? (ver §6.9b: alucinación vs. riqueza trivial)
+  - **Ablación exhaustiva de fusión de direcciones** (`results/analisis_fusion_todas.py`): 8 poolings × 3 τ × 6 fusiones (suma, max, min, asimetría, rank-suma, JSD) — ninguna supera a kl_t_v sola (mejor 0.649 < 0.661), y añadir v→t a la combinación estrella la baja (0.698 → 0.681). "La fusión ayuda" solo en configs donde t_v ya es azar
+  - JSD se satura en su techo (ln 2 = 0.693) porque las distribuciones son casi disjuntas (brecha modal) — por eso no discrimina
+  - Coseno (0.42–0.57) no aporta
   - Interpretación: la asimetría de KL captura "sorpresa" del modelo
 - §7.2 Efecto de la estrategia de pooling (8 variantes):
   - Tabla completa con AUROC por pooling (datos reales de T2)
@@ -341,13 +395,20 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
   - N=129 es pequeño (potencia estadística limitada)
   - AUROC 0.661 es moderado (no suficiente para deployment clínico directo)
   - Solo un modelo (MedGemma-4B) y un dataset (MM-ODIR-129)
-  - Confirmación en val+test débil (AUROC 0.569, CI muy ancho)
+  - **H4 rechazada:** la señal no se correlaciona con la severidad del glaucoma (rho=+0.001, p=0.99) — detecta errores, no severidad
+  - Confirmación en val+test débil (AUROC 0.569, CI muy ancho; solo 6 errores)
+  - Generalización estimada por Monte Carlo CV: 0.581 ± 0.116 (anidado) para la KL sola — más baja que el 0.661 de la cohorte por la maldición del ganador en la selección
   - Self-Consistency evaluado sobre subconjunto de 50 imágenes (no 129), lo cual limita la comparabilidad directa
   - Verbalized Confidence degenerada (solo 2 valores), lo que sugiere una limitación fundamental de los VLMs instruction-tuned para auto-evaluarse
   - Heatmaps no validados cuantitativamente contra segmentaciones ground truth
+  - **KL winsorizada:** el techo ln(1/eps)=23.03 recorta la cola; los valores absolutos de KL no son portables entre eps/hardware (la derivación clínica debe ser por percentil, nunca por umbral absoluto)
+  - **Softmax restringido:** MSP/p_yes son scores binarios sobre 2 logits, no probabilidades calibradas de vocabulario completo
+  - La zona verde (30.2% sin errores) es una medida in-sample; en pacientes nuevos el error esperado en esa zona es ≲ 1/39 (regla de tres)
 - §8.4 Riesgos identificados:
   - Massive activations: riesgo de colapso numérico si se cambia de float64
   - Dependencia de la versión de transformers (≥4.51.3 obligatorio)
+  - La elección de `epsilon` afecta los valores absolutos de KL (mantenerlo fijo entre corridas)
+  - **PENDIENTE OBLIGATORIO (diseño congelado):** análisis de robustez excluyendo imágenes con `has_annotation_artifact` (p. ej. la flecha quemada de `1281_right.jpg`) — debe reportarse antes de cualquier submission
 - §8.5 Trabajo futuro (roadmap para la tesis):
   - Escalar a datasets más grandes (RIM-ONE, REFUGE, ORIGA)
   - Probar con otros VLMs (LLaVA-Med, GPT-4V, Gemini Pro Vision)
@@ -383,20 +444,55 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
 - §11.1 Contribuciones de esta fase (dos contribuciones originales verificadas):
   1. **Contribución original #1:** Primera demostración empírica de cross-modal disagreement (KL entre hidden states visuales y textuales del decoder) como señal de UQ en VLMs médicos — sin precedente en la literatura
   2. **Contribución original #2:** Fusión parameter-free `rank(KL) + rank(1-MSP)` — primera combinación por ranks de una señal de espacio de representaciones internas con una señal de espacio de output para UQ en VLMs — verificado como sin precedente en la literatura
-  3. Framework de evaluación con 98 variantes y baselines de igual costo
+  3. Framework de evaluación con 97 variantes y baselines de igual costo
   4. Pipeline training-free, single-pass, costo computacional 1×
-- §11.2 Verificación de hipótesis (tabla con H1-H4: verificada/parcial/pendiente)
+  5. **Verificación independiente del pipeline completo** (val_08, cross-GPU, zona verde) como práctica doctoral distintiva
+- §11.2 Verificación de hipótesis (tabla con datos reales):
+  | Hipótesis | Resultado | Evidencia |
+  |---|---|---|
+  | H1: KL > azar | **Verificada** | AUROC 0.661 [0.522, 0.772], p=0.006 |
+  | H2: KL > baselines 1× | **Parcial** | +0.037 sobre MSP; la ventaja clara está en la combinación |
+  | H3: combinación > componentes | **Verificada (exploratoria)** | 0.698 [0.596, 0.787], Excess-AURC 0.407 |
+  | H4: correlación con severidad | **Rechazada** | rho=+0.001, p=0.99 |
 - §11.3 Roadmap doctoral:
   - Fase 2: Escalar a múltiples datasets y VLMs
   - Fase 3: Generalizar a otras tareas médicas (dermatología, radiología)
-  - Fase 4: Integración con sistemas de triage clínico
+  - Fase 4: Integración con sistemas de triage clínico (el esquema de 3 zonas: auto-responder cola, derivar cabeza, zona gris)
   - Defensa de la técnica de UQ como contribución doctoral
+
+---
+
+### 📄 12_Verificacion_y_Validacion.md
+**Verificación independiente y robustez numérica** (~1500 palabras). Documento distintivo de esta tesis: el pipeline no solo se ejecutó, se verificó con código independiente. Incluye:
+- §12.1 Filosofía de verificación: nunca verificar con el mismo código que pudo tener el bug (código independiente, recomputación a mano, controles positivo/negativo)
+- §12.2 Scripts de validación pre-implementación (`validacion/val_01`–`val_07`): entorno, tokenizer (IDs yes=4443, no=1904, image_soft_token=262144), dataset, API de generate, métricas, estadística, piloto
+- §12.3 `validacion/val_08_resultados.py` (19 checks, todos PASS):
+  - Invariantes del CSV: p_yes = softmax(logits), entropy binaria, MSP, energy, consistencia del formato largo, rangos (JSD ≤ ln 2, coseno ∈ [0,2]), conteos (129 imgs, 60N/69P)
+  - Métricas a mano: AUROC por fórmula de ranks (sin sklearn) = 0.660941 exacto, AUPRC manual = 0.329312, identidad AUROC ≡ U/(n_e·n_c)
+  - Combinación por ranks recomputada = 0.697535 exacto
+  - kl_div contra Σ p·ln(p/q) manual (verifica la DIRECCIÓN de la KL)
+  - Bootstrap con semilla distinta: IC compatible
+  - El empate de 1307_right.jpg (logit_yes=logit_no=17.0, p_yes=0.5) documentado
+- §12.4 Verificación desde el modelo (Colab, forward manual):
+  - Logits bitwise idénticos entre GPUs (0/129 predicciones cambian)
+  - Spearman(KL manual, KL csv) = 0.964; AUROC 0.645 vs 0.661 (Δ=0.016)
+- §12.5 Robustez numérica:
+  - KL winsorizada en ln(1/eps)=23.03 (53/129 en el techo; epsilon fijo entre corridas)
+  - Ruido real entre GPUs/backends ≈ 0.4 nats (eager vs sdpa)
+  - Regla: derivación por percentil de cohorte, nunca por umbral absoluto
+- §12.6 Verificación de la zona verde (`results/verificacion_zona_verde.py`):
+  - Posiciones de los 26 errores en el ranking (primer error en posición 40)
+  - Cruce exacto con la curva de Fig 4
+- §12.7 Lecciones aprendidas (bugs encontrados por verificación):
+  - Self-consistency: voto por logits en vez de token muestreado (AUROC 0.500), chequeo por ID exacto (variantes de yes), deriva fuera de formato a T=1.5
+  - Oracle de AURC invertido (detectado al ver oracle > azar)
+  - Index misalignment en pandas (Series con índices distintos → NaN)
 
 ---
 
 ### Reglas de Calidad Obligatorias
 
-1. **Idioma:** Todo en español. Los términos técnicos en inglés se mantienen en inglés (KL divergence, hidden states, pooling, AUROC, etc.).
+1. **Idioma:** El texto en español. Los términos técnicos en inglés se mantienen en inglés (KL divergence, hidden states, pooling, AUROC, etc.). **Las figuras están en inglés** (convención de publicación) — no las traduzcas, solo embédelas.
 2. **Datos reales:** NUNCA inventes números. Usa exclusivamente los datos proporcionados arriba o los que extraigas de los archivos CSV del proyecto.
 3. **Figuras:** Copia las figuras de `figures/` a `Documentacion/assets/` y embédelas con sintaxis Markdown estándar `![descripción](assets/nombre.png)`.
 4. **Diagramas:** Usa bloques Mermaid ```mermaid``` para diagramas de arquitectura, flujos de datos, taxonomías y pipelines.
@@ -415,18 +511,24 @@ Lee los siguientes archivos antes de generar la documentación:
 - `config.yaml` — hiperparámetros del experimento
 - `src/config.py`, `src/data.py`, `src/inference.py`, `src/uncertainty.py`, `src/evaluation.py`, `src/figures.py` — código fuente completo
 - `figures/tabla_t1_resultados.csv` — Tabla T1 (resultados principales, incluye AURC y Excess-AURC)
-- `figures/tabla_t2_ablaciones.csv` — Tabla T2 (98 variantes con AUROC)
+- `figures/tabla_t2_ablaciones.csv` — Tabla T2 (97 variantes con AUROC)
 - `figures/tabla_t3_comparativa.csv` — Tabla T3 (comparativa con literatura)
 - `figures/tabla_t4_costo_beneficio.csv` — **NUEVA:** Tabla T4 (costo computacional vs. AUROC para todos los métodos)
 - `results/evaluation_summary.csv` — Resumen de evaluación con BCa CI
 - `results/acc_cov_P1_winner.csv` — Accuracy-coverage de la señal ganadora
 - `results/results_verbalized.csv` — **NUEVO:** 129 filas de confianza verbalizada (P5)
-- `results/results_self_consistency.csv` — **NUEVO:** 101 filas (50 imgs × 2 prompts) de self-consistency
+- `results/results_self_consistency.csv` — **NUEVO:** 100 filas de datos (50 imgs × 2 prompts) de self-consistency
 - `results/analisis_verbalized.py` — Script de análisis del baseline verbalized
 - `results/analisis_sc_v2.py` — Script de análisis del baseline self-consistency (voto 3-vías)
+- `results/analisis_fusion_todas.py` — Ablación exhaustiva de fusión de direcciones KL (8 poolings × 3 τ)
+- `results/verificacion_zona_verde.py` — Verificación de la zona verde (posiciones de los 26 errores)
+- `results/analisis_ranks_mc.py` — Monte Carlo CV de la combinación por ranks
+- `results/verificacion_manual_kl.csv` — KL recomputada manualmente en GPU distinta (robustez)
+- `validacion/val_08_resultados.py` — 19 checks independientes del pipeline
 - `Definicion_Experimental_Minima_BIP2026.md` — Especificación experimental congelada
 - `Guia_Conceptual_y_Algoritmo_BIP2026.md` — Guía pedagógica paso a paso
 - `Analisis_Dataset_MM_ODIR_129.md` — Análisis del dataset
+- `Reporte_Experimento_BIP2026.md` — **Reporte consolidado del experimento (fuente primaria de números y decisiones)**
 - `AGENTS.md` — Especificaciones técnicas detalladas
 
 ### Ruta de la documentación
@@ -434,7 +536,9 @@ Lee los siguientes archivos antes de generar la documentación:
 ```
 G:\My Drive\Dropbox\Migue\Doctorado\Años Doctorado\2do Año\Primer semestre\BIP 2026\Codigo\Documentacion\
 ├── assets/                          ← Copiar aquí las figuras de figures/
+│   ├── fig1_pipeline.png
 │   ├── fig2_boxplot.png
+│   ├── fig2_boxplot_klvt.png        ← NUEVA (dirección espejo)
 │   ├── fig2_boxplot_entropy.png
 │   ├── fig2_boxplot_1msp.png
 │   ├── fig2_boxplot_energy.png
@@ -443,9 +547,9 @@ G:\My Drive\Dropbox\Migue\Doctorado\Años Doctorado\2do Año\Primer semestre\BIP
 │   ├── fig4_accuracy_coverage.png
 │   ├── fig5_quadrants.png
 │   ├── fig6_correlacion_senales.png
-│   ├── fig7_costo_vs_auroc.png      ← NUEVA
-│   ├── fig8_verbalized.png          ← NUEVA
-│   ├── fig9_sc_boxplots.png         ← NUEVA
+│   ├── fig7_costo_vs_auroc.png
+│   ├── fig8_verbalized.png
+│   ├── fig9_sc_boxplots.png
 │   ├── heatmap_2472_right.png
 │   ├── heatmap_2759_left.png
 │   └── heatmap_3086_right.png
@@ -459,7 +563,8 @@ G:\My Drive\Dropbox\Migue\Doctorado\Años Doctorado\2do Año\Primer semestre\BIP
 ├── 08_Discusion_y_Limitaciones.md
 ├── 09_Dataset_MM_ODIR_129.md
 ├── 10_Guia_Reproducibilidad.md
-└── 11_Conclusiones_y_Proximos_Pasos.md
+├── 11_Conclusiones_y_Proximos_Pasos.md
+└── 12_Verificacion_y_Validacion.md   ← NUEVO
 ```
 
-Comienza generando la carpeta `assets/` copiando las figuras, luego genera los 11 documentos en orden. Para cada documento, sigue la estructura de secciones indicada arriba y asegúrate de que tenga profundidad doctoral.
+Comienza generando la carpeta `assets/` copiando las figuras, luego genera los 12 documentos en orden. Para cada documento, sigue la estructura de secciones indicada arriba y asegúrate de que tenga profundidad doctoral.
