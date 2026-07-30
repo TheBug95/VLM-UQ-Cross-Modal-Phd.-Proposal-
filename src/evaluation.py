@@ -566,7 +566,22 @@ def main() -> None:
                 if "error" not in r:
                     summary_rows.append(_summary_row(r, prompt))
 
-            # 2) Baselines de igual costo
+            # 2) Dirección espejo de la ganadora (misma capa/τ/pooling) — la
+            #    elección de dirección se reporta SIEMPRE con datos de ambas
+            mirror = None
+            if winner.startswith("kl_t_v"):
+                mirror = "kl_v_t" + winner[len("kl_t_v"):]
+            elif winner.startswith("kl_v_t"):
+                mirror = "kl_t_v" + winner[len("kl_v_t"):]
+            if mirror is not None:
+                frame_m = signal_frame(df, prompt, mirror)
+                if not frame_m.empty:
+                    r = analyze_frame(frame_m, f"{mirror} (espejo)", split=args.split, master=None)
+                    print_signal_report(r)
+                    if "error" not in r:
+                        summary_rows.append(_summary_row(r, prompt))
+
+            # 3) Baselines de igual costo
             for bl in BASELINE_SIGNALS:
                 frame_bl = signal_frame(df, prompt, bl)
                 r = analyze_frame(frame_bl, bl, split=args.split, master=None)
@@ -574,7 +589,7 @@ def main() -> None:
                 if "error" not in r:
                     summary_rows.append(_summary_row(r, prompt))
 
-            # 3) Combinación por ranks (sin parámetros)
+            # 4) Combinación por ranks (sin parámetros)
             frame_rc = rank_combination_frame(df, prompt, winner)
             if not frame_rc.empty:
                 r = analyze_frame(frame_rc, f"rank({winner})+rank(1-MSP)", split=args.split, master=master)

@@ -170,6 +170,25 @@ Lectura honesta:
 
 **Triage (accuracy-coverage, P1):** si se deriva al oftalmólogo el 50% de casos con mayor u(x), la accuracy en el 50% que el modelo responde solo sube de **79.8% → 89.1%**. Y en el otro extremo: la combinación tiene una **zona verde** — los **39 casos menos inciertos (30.2%) son todos correctos** (el primer error aparece en la posición 40 del ranking; verificado recomputando desde el CSV en `results/verificacion_zona_verde.py`, donde están las posiciones de los 26 errores). Advertencias: la frontera de la zona es suave (Δu ≈ 0.004 entre las posiciones 39 y 40) y la medida es in-sample (IC 95% de la tasa de error en la zona verde hasta ~7.7% por regla de tres). Lectura clínica: auto-responder la cola (~30% sin errores en esta cohorte), derivar la cabeza, y la zona gris intermedia al especialista.
 
+### 6.1 ¿Por qué KL(texto‖imagen) y no KL(imagen‖texto)?
+
+La KL es **asimétrica**, y la elección de dirección fue una decisión de diseño deliberada (de hecho, elegimos KL *precisamente porque* podíamos calcular ambas direcciones en la misma pasada y ponerlas a prueba — la respuesta la dieron los datos):
+
+- **KL(p_text ‖ p_vis)** — la elegida — pondera la divergencia por **donde el texto pone su masa**. Responde a: *"¿el texto afirma cosas que la imagen no respalda?"*. Es la dirección de la **alucinación**: si la representación de la respuesta pone probabilidad donde la representación visual no pone nada, la respuesta no está anclada en la imagen → probable error.
+- **KL(p_vis ‖ p_text)** pondera por **donde la imagen pone su masa**. Responde a: *"¿la imagen contiene cosas que el texto no menciona?"*. Pero una foto de fondo de ojo **siempre** contiene infinitamente más que una respuesta sí/no (vasos, mácula, periferia, ruido) — así que esta dirección mide sobre todo la riqueza trivial imagen>texto, que es casi constante para todas las imágenes: ruido para detectar errores.
+
+Los números lo confirman (P1, capa 34, τ=1, max, N=129):
+
+| Métrica | KL(texto‖imagen) ✓ | KL(imagen‖texto) |
+|---|---|---|
+| AUROC | **0.661** | 0.566 |
+| AUPRC | **0.329** | 0.293 |
+| Excess-AURC ↓ | **0.670** | 0.800 |
+| p (Mann-Whitney) | **0.0057** | 0.1487 (n.s.) |
+| Δ mediana (errores − correctos) | +0.254 | +0.227 |
+
+Detalle fino: el desplazamiento de medianas es parecido en ambas (+0.25 vs +0.23), pero el AUROC no — porque el AUROC depende del solapamiento completo de las distribuciones, no de la mediana. En v→t las colas se solapan mucho más (la señal "la imagen siempre es más rica" domina sobre la señal del error), y por eso su p-value ni siquiera es significativo. Y la ablación exhaustiva de fusión (sección 8) cerró la puerta final: cualquier combinación de ambas direcciones **diluye** a la ganadora. La dirección t→v carga la señal; v→t se reporta siempre junto a ella (T1, Fig 2–4, evaluation_summary) como evidencia de que la elección fue empírica, no arbitraria.
+
 ---
 
 ## 7. Reporte de la combinación KL + MSP

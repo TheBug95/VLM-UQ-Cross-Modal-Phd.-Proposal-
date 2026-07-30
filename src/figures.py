@@ -53,6 +53,7 @@ plt.rcParams["axes.spines.right"] = False
 
 # Un color por señal, consistente en TODAS las figuras
 C_KL = "#0072B2"      # azul
+C_KLVT = "#56B4E9"    # azul claro (dirección espejo v→t)
 C_COMBO = "#CC79A7"   # púrpura rosado
 C_MSP = "#009E73"     # verde
 C_ENTROPY = "#E69F00" # naranja
@@ -61,6 +62,7 @@ C_GRAY = "#7F8C8D"    # gris para baselines de costo
 
 SIGNAL_COLORS = {
     "kl": C_KL,
+    "klvt": C_KLVT,
     "rank(KL) + rank(1-MSP)": C_COMBO,
     "1 - MSP": C_MSP,
     "Entropy": C_ENTROPY,
@@ -78,6 +80,8 @@ LABELS = {
 def _signal_key(name: str) -> str:
     if name.startswith("KL cross-modal"):
         return "kl"
+    if name.startswith(("KL v→t", "KL t→v")):
+        return "klvt"
     return name
 
 
@@ -92,9 +96,27 @@ def _y_v(frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
 # Conjunto de señales a comparar
 # ------------------------------------------------------------------------------
 def build_signal_set(df: pd.DataFrame, prompt: str, winner: str) -> dict[str, pd.DataFrame]:
-    """Frames (image_filename, split, label, correct, value) de las señales del paper."""
+    """Frames (image_filename, split, label, correct, value) de las señales del paper.
+
+    Incluye SIEMPRE la dirección espejo de la ganadora (kl_v_t <-> kl_t_v con
+    la misma capa/τ/pooling): la justificación de la dirección se reporta con
+    datos de ambas, no solo de la ganadora.
+    """
     signals: dict[str, pd.DataFrame] = {}
     signals[f"KL cross-modal ({winner})"] = signal_frame(df, prompt, winner)
+
+    # Dirección espejo con idéntica configuración
+    if winner.startswith("kl_t_v"):
+        mirror = "kl_v_t" + winner[len("kl_t_v"):]
+        m = signal_frame(df, prompt, mirror)
+        if not m.empty:
+            signals[f"KL v→t (mirror, {mirror})"] = m
+    elif winner.startswith("kl_v_t"):
+        mirror = "kl_t_v" + winner[len("kl_v_t"):]
+        m = signal_frame(df, prompt, mirror)
+        if not m.empty:
+            signals[f"KL t→v (mirror, {mirror})"] = m
+
     for bl, label in LABELS.items():
         signals[label] = signal_frame(df, prompt, bl)
     rc = rank_combination_frame(df, prompt, winner)
@@ -696,7 +718,7 @@ def main() -> None:
         "rank(KL) + rank(1-MSP)": "rankcombo",
     }
     for name, frame in signals.items():
-        slug = slugs.get(name, "signal")
+        slug = slugs.get(name, "klvt" if name.startswith(("KL v→t", "KL t→v")) else "signal")
         suffix = "" if slug == "kl" else f"_{slug}"
         fig2_boxplot(frame, name, out_dir / f"fig2_boxplot{suffix}.png")
 
