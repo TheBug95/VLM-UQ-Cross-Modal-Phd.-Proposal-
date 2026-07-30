@@ -471,18 +471,19 @@ class MedGemmaInference:
         n_samples: int = 10,
         temperature: float = 1.5,
     ) -> dict[str, Any]:
-        """Muestrea n respuestas a temperatura T y devuelve la fracción de 'yes'.
+        """Muestrea n respuestas a temperatura T y vota en 3 categorías: yes/no/other.
 
-        IMPORTANTE (bug corregido 29-jul-2026): el voto usa el token
-        REALMENTE MUESTREADO (out.sequences), no los logits — comparar logits
-        tras muestrear hace las 10 "muestras" idénticas (frac_yes ∈ {0,1},
-        entropía 0, AUROC 0.5). Además, T=0.7 (diseño original) AFILA la
-        distribución (T<1 ⇒ logits×1.43); con p_yes mediana ≈ 0.9999 en este
-        dataset, se requiere T ≥ 1 para que el voto varíe.
+        Historia de bugs (29-jul-2026): (1) el voto comparaba logits en vez del
+        token muestreado → muestras idénticas; (2) el chequeo por ID exacto
+        (4443) perdía variantes (Yes, ▁yes); (3) al aplanar la distribución
+        (T=1.5), el modelo muestrea tokens fuera del formato ("based", "i"):
+        la masa de yes+no no es dominante a T>1. Solución: clasificar por texto
+        en yes/no/other y computar entropía 3-vías (señal principal) y binaria
+        condicional. frac_other = deriva fuera del formato, también es u(x).
         """
         prompt = self.build_prompt(prompt_id)
         inputs = self.processor(images=image, text=prompt, return_tensors="pt").to(self.device)
-        yes_count = 0
+        yes_count, no_count, other_count = 0, 0, 0
         sampled_tokens: list[str] = []
         with torch.inference_mode():
             for _ in range(n_samples):
@@ -494,22 +495,40 @@ class MedGemmaInference:
                     return_dict_in_generate=True,
                 )
                 sampled_id = int(out.sequences[0, inputs["input_ids"].shape[1]].item())
-                # Chequeo robusto: el modelo puede muestrear cualquier variante
-                # ("yes"=4443, "Yes"=10784, "▁yes"=11262...) — comparar por texto
+                # Voto por texto (robusto a variantes yes/Yes/▁yes) en 3 categorías:
+                # yes / no / other. "other" = el modelo se sale del formato binario
+                # (quiere explicar en vez de contestar) — también es incertidumbre.
                 gen_tok = self.processor.tokenizer.decode([sampled_id]).strip().lower()
                 sampled_tokens.append(gen_tok)
                 if gen_tok.startswith("yes"):
                     yes_count += 1
+                elif gen_tok.startswith("no"):
+                    no_count += 1
+                else:
+                    other_count += 1
 
         frac_yes = yes_count / n_samples
-        # Entropía de la frecuencia como u(x) (clamp a 0 por ruido flotante)
+        frac_no = no_count / n_samples
+        frac_other = other_count / n_samples
+
         eps = self.cfg.uncertainty.epsilon
-        entropy_sc = max(0.0, -(
-            frac_yes * np.log(frac_yes + eps) + (1 - frac_yes) * np.log(1 - frac_yes + eps)
+        # Entropía de la distribución 3-vías (señal principal de SC)
+        entropy3 = max(0.0, -(
+            frac_yes * np.log(frac_yes + eps)
+            + frac_no * np.log(frac_no + eps)
+            + frac_other * np.log(frac_other + eps)
         ))
+        # Entropía binaria condicional (solo votos yes/no, ≈ SC clásica)
+        total_yn = frac_yes + frac_no
+        p_y = frac_yes / (total_yn + eps)
+        entropy_bin = max(0.0, -(p_y * np.log(p_y + eps) + (1 - p_y) * np.log(1 - p_y + eps)))
+
         return {
             "self_consistency_frac_yes": frac_yes,
-            "self_consistency_entropy": float(entropy_sc),
+            "sc_frac_no": frac_no,
+            "sc_frac_other": frac_other,
+            "self_consistency_entropy": float(entropy3),
+            "sc_entropy_binary": float(entropy_bin),
             "sc_samples": ",".join(sampled_tokens),
         }
 
