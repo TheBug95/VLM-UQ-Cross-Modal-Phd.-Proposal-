@@ -142,6 +142,30 @@ Estos son los **datos reales verificados** del experimento. Úsalos textualmente
 - **Matiz del softmax restringido:** p_yes y el MSP se computan como softmax sobre SOLO los 2 logits (yes/no) — es un score binario, NO una probabilidad calibrada sobre el vocabulario completo (el SC a T=1.5 reveló masa fuera de yes/no: muestras "based", "i"). Para ranking/UQ es válido; no llamarla "probabilidad calibrada" en el paper.
 - Tiempo de inferencia: ~4.5 s por imagen (corrida completa 258 inferencias ≈ 10–20 min de GPU).
 
+### Estado del Arte (análisis de novedad verificado por especialista externo)
+
+**Veredicto del especialista:** la combinación MedGemma 4B + divergencia KL cross-modal en un solo forward pass + UQ para glaucoma **no existe previamente en la literatura**. Los trabajos más cercanos usan KL o comparaciones cross-modales, pero todos requieren múltiples pasadas, contrastan contextos alternativos, o no miden incertidumbre intra-modelo:
+
+| Trabajo | Modelo | Mecanismo de divergencia/distancia | Modalidad de inferencia | Aplicación |
+|---|---|---|---|---|
+| **Nuestro** | **MedGemma 4B** | **KL cross-modal (hidden states visuales vs. textual del decoder)** | **Single forward pass O(1)** | **UQ en glaucoma (retinografía)** |
+| NoLan | LLaVA / Vicuna | KL entre P(multimodal) y P(solo texto) | Múltiples pasadas (contraste) | Mitigación de alucinaciones |
+| VCD | MLLMs genéricos | KL entre imagen original vs. distorsionada | Múltiples pasadas (contraste) | Reducción de alucinaciones de objetos |
+| ConVis | MLLMs | KL con imagen reconstruida | Múltiples pasadas (contraste) | Alucinaciones |
+| FUSE | CLIP + LLM | Procesos gaussianos + diversidad semántica | Muestreo multi-respuesta | Incertidumbre epistémica |
+| Dropout Decoding | LVLMs | Ensamble por máscara de tokens visuales (majority voting) | Múltiples subconjuntos | Incertidumbre perceptual |
+| FairCLIP | CLIP / BLIP-2 | Distancia de Sinkhorn (transporte óptimo) | Alineación de embeddings | Equidad diagnóstica en glaucoma (Harvard-FairVLMed, 10.000 imgs) |
+
+**Puntos clave del análisis del especialista (usar en el marco teórico y la discusión):**
+- **NoLan y VCD** son los más cercanos conceptualmente (usan KL cross-modal), pero contrastan la distribución de salida bajo dos condiciones de entrada distintas (multimodal vs. texto, original vs. distorsionada) → requieren 2+ pasadas y miden sesgo/alucinación, no incertidumbre intra-modelo en una pasada.
+- **FUSE** estima incertidumbre epistémica proyectando tokens visuales al espacio textual, pero con procesos gaussianos sobre encoders congelados + muestreos semánticos múltiples → training-free pero multi-pass, no un cálculo cerrado en una inferencia.
+- **FairCLIP** usa distancia de Sinkhorn en vez de KL citando su asimetría y violación de la desigualdad triangular — **nuestra respuesta de diseño:** reportamos AMBAS direcciones de KL (§6.9b) y JSD como variante simétrica (aunque JSD se satura en ln 2 por la brecha modal, ver §7.1).
+- **MedGemma** (Google Research, Gemma 3 + MedSigLIP): sus reportes técnicos NO incorporan mecanismos nativos de UQ basados en KL cross-modal durante la generación autorregresiva.
+- **Harvard-FairVLMed** (10.000 imágenes SLO + notas clínicas) es el dataset de referencia para equidad en glaucoma — candidato natural para la Fase 2 (escalar la validación).
+- **Riesgos que el especialista identificó y el diseño incorporó:** dilución espacial del disco óptico (5–10% de la imagen → ablaciones de pooling: roi, attn, topk, normw, rollout, headspec), brecha modal (→ temperaturas τ=1/2/4, JSD), asimetría de KL (→ ambas direcciones siempre reportadas), calibración para accionabilidad clínica (→ esquema de triage por percentiles + zona verde).
+- **Grad-CAM e Integrated Gradients** fueron considerados y descartados como señal UQ: requieren backward pass (rompen el framing single-pass 1×); quedan como future work en la familia XAI (explicación), no UQ.
+- **Attention-weighted pooling** implementado como ablación deployable (cross-attention: AUROC 0.479; rollout a la Abnar & Zuidema 2020: 0.533) — ninguno supera a max pooling (0.661): la atención del modelo frozen no está alineada con la tarea (ver T2).
+
 ### Estructura del Código Fuente (ya implementado)
 
 ```
@@ -198,10 +222,17 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
 - §2.1 Vision-Language Models (VLMs): arquitectura, pre-entrenamiento, estado del arte (CogVLM, LLaVA-Med, MedGemma)
 - §2.2 Uncertainty Quantification en Deep Learning: taxonomía (aleática vs. epistémica), métodos clásicos (MC-Dropout, Deep Ensembles, Temperature Scaling)
 - §2.3 UQ para LLMs y VLMs: Semantic Entropy, Verbalized Confidence, UMPIRE, VIG-TUQ, SAPLMA
-- §2.4 El problema de la dilución espacial en imágenes médicas: por qué mean pooling falla cuando la región de interés (disco óptico) es 5-10% de la imagen
-- §2.5 Cross-Modal Disagreement como señal de incertidumbre: intuición, formulación matemática
-- §2.6 Glaucoma y diagnóstico por imagen de fondo de ojo: cup-to-disc ratio, signos clínicos, importancia del triage
-- Usa diagramas Mermaid para ilustrar la arquitectura de un VLM genérico y la taxonomía de métodos UQ
+- §2.4 Estado del arte en métodos cross-modales y contrastivos (los más cercanos a nuestra propuesta — ver tabla de Estado del Arte en los datos del prompt):
+  - **NoLan:** KL entre la distribución multimodal y la solo-texto para detectar apoyo en sesgos lingüísticos (multi-pass, alucinaciones)
+  - **VCD / ConVis:** decodificación contrastiva con imagen distorsionada o reconstruida (multi-pass)
+  - **FUSE:** procesos gaussianos sobre encoders congelados + diversidad semántica (training-free pero multi-respuesta)
+  - **Dropout Decoding:** ensamble por enmascaramiento de tokens visuales
+  - **FairCLIP / Harvard-FairVLMed:** equidad en glaucoma con distancia de Sinkhorn (10.000 imágenes) — y su crítica a la asimetría de KL, a la que respondemos reportando ambas direcciones + JSD
+  - Posicionar nuestra propuesta: la única que computa KL intra-modelo en UN solo forward pass para UQ en glaucoma
+- §2.5 El problema de la dilución espacial en imágenes médicas: por qué mean pooling falla cuando la región de interés (disco óptico) es 5-10% de la imagen
+- §2.6 Cross-Modal Disagreement como señal de incertidumbre: intuición, formulación matemática
+- §2.7 Glaucoma y diagnóstico por imagen de fondo de ojo: cup-to-disc ratio, signos clínicos, importancia del triage
+- Usa diagramas Mermaid para ilustrar la arquitectura de un VLM genérico y la taxonomía de métodos UQ (clásicos / LLM / contrastivos cross-modal / nuestro)
 
 ---
 
@@ -387,6 +418,12 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
 - §8.1 Interpretación teórica: ¿qué mide el desacuerdo cross-modal?
   - Cuando el modelo "ve" algo ambiguo pero "dice" algo seguro → KL alta
   - Conexión con calibración: modelos sobreconfiados tienen baja entropy pero alta KL cross-modal
+- §8.1b Posicionamiento frente al estado del arte (usar la tabla del bloque "Estado del Arte"):
+  - vs. **NoLan/VCD/ConVis:** ellos contrastan dos condiciones de entrada (2+ pasadas) para medir sesgo/alucinación; nosotros medimos desacuerdo intra-modelo en 1 pasada para UQ. Complementarios, no competidores — y nuestro costo es la mitad o menos.
+  - vs. **FUSE:** misma filosofía training-free, pero ellos muestrean N respuestas + procesos gaussianos; nosotros un cálculo cerrado en una inferencia.
+  - vs. **Dropout Decoding:** ellos destruyen información (máscaras de tokens) para medir consenso; nosotros la leemos completa una vez.
+  - vs. **FairCLIP:** su crítica a la asimetría de KL se responde reportando ambas direcciones + JSD; además su objetivo (equidad) es ortogonal al nuestro (detección de errores) — Harvard-FairVLMed es candidato para Fase 2.
+  - vs. **Grad-CAM/IG:** descartados como señal UQ (requieren backward pass; son XAI, no UQ) — future work.
 - §8.2 Contribuciones originales a la tesis doctoral (dos contribuciones verificadas):
   - **Contribución 1 — Señal KL cross-modal:** Primer método de UQ que es simultáneamente single-pass, training-free Y cross-modal. Nadie antes extrajo KL entre hidden states de tokens visuales y textuales del decoder de un VLM.
   - **Contribución 2 — Fusión parameter-free `rank(KL) + rank(1-MSP)`:** Primera combinación de una señal de espacio de representaciones internas (cross-modal KL) con una señal de espacio de output (MSP) mediante agregación de rangos. Verificado por búsqueda exhaustiva: no existe paper previo que proponga esta combinación. La complementariedad empírica (AUROC 0.698 > 0.661 KL sola > 0.624 MSP sola) demuestra que ambos espacios aportan información ortogonal.
@@ -530,6 +567,8 @@ Lee los siguientes archivos antes de generar la documentación:
 - `Analisis_Dataset_MM_ODIR_129.md` — Análisis del dataset
 - `Reporte_Experimento_BIP2026.md` — **Reporte consolidado del experimento (fuente primaria de números y decisiones)**
 - `AGENTS.md` — Especificaciones técnicas detalladas
+- `research/bip2026_dim01.md` a `bip2026_dim10.md` + `bip2026_cross_verification.md` — Dossier de investigación de fondo (10 dimensiones + cross-verificación) para el estado del arte
+- `BIP2026_Dossier_Maestro.md` — Resumen del dossier de investigación
 
 ### Ruta de la documentación
 
