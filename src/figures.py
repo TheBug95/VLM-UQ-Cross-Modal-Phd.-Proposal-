@@ -390,6 +390,216 @@ def table_t3(out_path: Path) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------------------
+# Fig 7 + Tabla T4: costo computacional vs. desempeño UQ
+# ------------------------------------------------------------------------------
+def _auroc_on(df: pd.DataFrame, prompt: str, images, signal_col: str | None,
+              baseline: str | None = None) -> float:
+    """AUROC de una señal restringida a un subconjunto de imágenes."""
+    sub = df[(df["prompt_id"] == prompt) & df["image_filename"].isin(images)]
+    if signal_col is not None:
+        sub = sub[sub["signal"] == signal_col]
+    sub = sub.drop_duplicates("image_filename")
+    y = 1 - sub["correct"].values
+    if baseline == "one_minus_msp":
+        v = (1 - sub["msp_answer"]).values
+    else:
+        v = sub["value"].values.astype(float)
+    m = ~np.isnan(v)
+    return float(roc_auc_score(y[m], v[m]))
+
+
+def fig7_tabla_t4_costo(df: pd.DataFrame, cfg: Config, out_dir: Path) -> pd.DataFrame | None:
+    """Fig 7 (costo vs AUROC, 2 paneles) y Tabla T4 (costo-beneficio).
+
+    Panel izquierdo: cohorte completa (129) — métodos 1× y verbalized (2×).
+    Panel derecho: subconjunto SC (50) — métodos 10× con nuestras señales
+    re-evaluadas en el mismo subconjunto (comparación justa).
+    """
+    results_dir = Path(cfg.paths.results)
+    verb_path = results_dir / "results_verbalized.csv"
+    sc_path = results_dir / "results_self_consistency.csv"
+    if not verb_path.exists() and not sc_path.exists():
+        print("[fig7] Sin results_verbalized.csv ni results_self_consistency.csv — omitida")
+        return None
+
+    obs = df[df["prompt_id"] == "P1"].drop_duplicates("image_filename")
+    y_all = 1 - obs["correct"].values
+    winner = select_winner(df, "P1")
+    n = len(obs)
+    kl = df[(df["prompt_id"] == "P1") & (df["signal"] == winner)]
+    kl = kl.set_index("image_filename")["value"]
+    kl_v = kl[obs["image_filename"]].values
+    combo_v = (kl[obs["image_filename"]].rank().values / n
+               + (1 - obs["msp_answer"]).rank().values / n)
+
+    filas_129 = [
+        ("Energy (1×)", 1, roc_auc_score(y_all, obs["energy_answer"].values), "129"),
+        ("1-MSP (1×)", 1, roc_auc_score(y_all, 1 - obs["msp_answer"].values), "129"),
+        ("KL (1×)", 1, roc_auc_score(y_all, kl_v), "129"),
+        ("rank(KL)+rank(1-MSP) (1×)", 1, roc_auc_score(y_all, combo_v), "129"),
+    ]
+    if verb_path.exists():
+        v = pd.read_csv(verb_path)
+        yv = 1 - v["correct"].values
+        filas_129.append(("Verbalized conf (2×)", 2,
+                          roc_auc_score(yv, v["u_verbalized"].values), "129"))
+
+    filas_50 = []
+    if sc_path.exists():
+        sc = pd.read_csv(sc_path)
+        d = sc[sc["prompt_id"] == "P1"].copy()
+        d["pred"] = (d["self_consistency_frac_yes"] > d["sc_frac_no"]).astype(int)
+        d["correct"] = (d["pred"] == d["label"]).astype(int)
+        imgs = d["image_filename"].tolist()
+        dsc = d.set_index("image_filename")
+        y50 = 1 - dsc["correct"].values
+        filas_50 = [
+            ("SC entropía 3-vías (10×)", 10, roc_auc_score(y50, dsc["self_consistency_entropy"].values), "50 (SC)"),
+            ("SC entropía binaria (10×)", 10, roc_auc_score(y50, dsc["sc_entropy_binary"].values), "50 (SC)"),
+            ("SC frac_other (10×)", 10, roc_auc_score(y50, dsc["sc_frac_other"].values), "50 (SC)"),
+            ("1-MSP (1×)", 1, _auroc_on(df, "P1", imgs, None, baseline="one_minus_msp"), "50 (SC)"),
+            ("KL (1×)", 1, _auroc_on(df, "P1", imgs, winner), "50 (SC)"),
+        ]
+        # combinación en el subconjunto
+        obs50 = df[(df["prompt_id"] == "P1") & df["image_filename"].isin(imgs)].drop_duplicates("image_filename")
+        obs50 = obs50.set_index("image_filename").loc[imgs]
+        kl50 = kl[imgs].values
+        n50 = len(imgs)
+        combo50 = (pd.Series(kl50).rank().values / n50
+                   + pd.Series((1 - obs50["msp_answer"]).values).rank().values / n50)
+        filas_50.append(("rank(KL)+rank(1-MSP) (1×)", 1, roc_auc_score(y50, combo50), "50 (SC)"))
+
+    # --- Figura ---
+    fig, axes = plt.subplots(1, 2, figsize=(11, 5), sharey=True)
+    for ax, filas, titulo in [
+        (axes[0], filas_129, "Cohorte completa (129 imágenes)"),
+        (axes[1], filas_50, "Subconjunto self-consistency (50)"),
+    ]:
+        if not filas:
+            ax.axis("off")
+            continue
+        for nombre, costo, auroc, _ in filas:
+            es_nuestro = nombre.startswith(("KL", "rank"))
+            ax.scatter(costo, auroc, s=90, zorder=3,
+                       color="#8e44ad" if "rank" in nombre else ("#2980b9" if es_nuestro else "#7f8c8d"),
+                       marker="D" if es_nuestro else "o")
+            ax.annotate(nombre.replace(" (", "\n("), (costo, auroc),
+                        textcoords="offset points", xytext=(8, -3), fontsize=7)
+        ax.axhline(0.5, color="k", linestyle="--", linewidth=1, alpha=0.5)
+        ax.set_xscale("log")
+        ax.set_xticks([1, 2, 10])
+        ax.set_xticklabels(["1×", "2×", "10×"])
+        ax.set_xlabel("Costo computacional (pasadas del modelo)")
+        ax.set_title(titulo, fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0.7, 16)
+    axes[0].set_ylabel("AUROC (detección de errores)")
+    fig.suptitle("Fig 7: Desempeño UQ vs. costo computacional (P1)", y=1.02)
+    plt.tight_layout()
+    out_fig = out_dir / "fig7_costo_vs_auroc.png"
+    plt.savefig(out_fig, bbox_inches="tight")
+    plt.close()
+    print(f"[fig] Guardada: {out_fig}")
+
+    # --- Tabla T4 ---
+    t4 = pd.DataFrame(
+        [(n, c, f"{a:.3f}", s) for n, c, a, s in filas_129 + filas_50],
+        columns=["Método", "Costo", "AUROC", "Evaluación"],
+    ).sort_values(["Evaluación", "AUROC"], ascending=[True, False])
+    out_t4 = out_dir / "tabla_t4_costo_beneficio.csv"
+    t4.to_csv(out_t4, index=False)
+    print(f"[tabla] Guardada: {out_t4}")
+    return t4
+
+
+# ------------------------------------------------------------------------------
+# Fig 8: degeneración de la confianza verbalizada
+# ------------------------------------------------------------------------------
+def fig8_verbalized(cfg: Config, out_dir: Path) -> None:
+    """Dos paneles: distribución de valores declarados + declarado vs. real."""
+    verb_path = Path(cfg.paths.results) / "results_verbalized.csv"
+    if not verb_path.exists():
+        print("[fig8] Sin results_verbalized.csv — omitida")
+        return
+    v = pd.read_csv(verb_path)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+
+    ax = axes[0]
+    counts = v["verbalized_conf"].value_counts().sort_index()
+    ax.bar(counts.index.astype(str), counts.values, color="#c0392b", alpha=0.85)
+    for i, val in enumerate(counts.values):
+        ax.text(i, val + 1, str(val), ha="center", fontsize=10)
+    ax.set_xlabel("Confianza declarada por el modelo (0–100)")
+    ax.set_ylabel("Número de imágenes")
+    ax.set_title(f"Fig 8a: El modelo solo dice {len(counts)} valores\ndistintos en {len(v)} imágenes")
+
+    ax = axes[1]
+    real = v.groupby("verbalized_conf")["correct"].mean() * 100
+    ax.scatter(real.index, real.values, s=90, color="#2980b9", zorder=3)
+    for x, yv in real.items():
+        n_c = int((v["verbalized_conf"] == x).sum())
+        ax.annotate(f"declara {x}%, acierta {yv:.1f}%\n(n={n_c})", (x, yv),
+                    textcoords="offset points", xytext=(10, -12), fontsize=8)
+    ax.plot([0, 100], [0, 100], "k--", label="Calibración perfecta", linewidth=1)
+    ax.set_xlabel("Confianza declarada (%)")
+    ax.set_ylabel("Accuracy real (%)")
+    ax.set_xlim(80, 100)
+    ax.set_ylim(60, 100)
+    ax.set_title("Fig 8b: Declarado vs. real (sobreconfianza)")
+    ax.legend(loc="lower right", fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    out_fig = out_dir / "fig8_verbalized.png"
+    plt.savefig(out_fig, bbox_inches="tight")
+    plt.close()
+    print(f"[fig] Guardada: {out_fig}")
+
+
+# ------------------------------------------------------------------------------
+# Fig 9: boxplots de las señales self-consistency
+# ------------------------------------------------------------------------------
+def fig9_sc_boxplots(cfg: Config, out_dir: Path) -> None:
+    """Boxplots correcto/incorrecto de frac_other y entropía 3-vías (P1)."""
+    sc_path = Path(cfg.paths.results) / "results_self_consistency.csv"
+    if not sc_path.exists():
+        print("[fig9] Sin results_self_consistency.csv — omitida")
+        return
+    sc = pd.read_csv(sc_path)
+    d = sc[sc["prompt_id"] == "P1"].copy()
+    d["pred"] = (d["self_consistency_frac_yes"] > d["sc_frac_no"]).astype(int)
+    d["correct"] = (d["pred"] == d["label"]).astype(int)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 5))
+    for ax, col, titulo in [
+        (axes[0], "sc_frac_other", "frac_other (deriva fuera de formato)"),
+        (axes[1], "self_consistency_entropy", "Entropía 3-vías"),
+    ]:
+        data = d[["correct", col]].copy()
+        data["correct"] = data["correct"].map({1: "Correcto", 0: "Incorrecto"})
+        sns.boxplot(data=data, x="correct", y=col, ax=ax, palette=["#2ecc71", "#e74c3c"])
+        sns.stripplot(data=data, x="correct", y=col, ax=ax, color="black", alpha=0.35, size=3)
+        corr = data[data["correct"] == "Correcto"][col]
+        err = data[data["correct"] == "Incorrecto"][col]
+        mw = stats.mannwhitneyu(err, corr, alternative="greater")
+        y_err = (data["correct"] == "Incorrecto").astype(int).values
+        auroc = roc_auc_score(y_err, d[col].values)
+        ax.text(0.05, 0.95, f"AUROC = {auroc:.3f}\nMWU p = {mw.pvalue:.4f}",
+                transform=ax.transAxes, fontsize=9, verticalalignment="top",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
+        ax.set_title(f"Fig 9: {titulo}\n(self-consistency 10×, P1, n={len(d)})", fontsize=10)
+        ax.set_xlabel("Resultado del modelo")
+        ax.set_ylabel(col)
+
+    plt.tight_layout()
+    out_fig = out_dir / "fig9_sc_boxplots.png"
+    plt.savefig(out_fig, bbox_inches="tight")
+    plt.close()
+    print(f"[fig] Guardada: {out_fig}")
+
+
+# ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
 def main() -> None:
@@ -437,6 +647,11 @@ def main() -> None:
     table_t1(signals, out_dir / "tabla_t1_resultados.csv")
     table_t2(df, args.prompt, out_dir / "tabla_t2_ablaciones.csv")
     table_t3(out_dir / "tabla_t3_comparativa.csv")
+
+    # Baselines de costo (verbalized 2×, self-consistency 10×) — si los CSV existen
+    fig7_tabla_t4_costo(df, cfg, out_dir)
+    fig8_verbalized(cfg, out_dir)
+    fig9_sc_boxplots(cfg, out_dir)
 
     print(f"\n[figures] Todas las figuras y tablas guardadas en {out_dir}")
 
