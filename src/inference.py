@@ -482,9 +482,8 @@ class MedGemmaInference:
         """
         prompt = self.build_prompt(prompt_id)
         inputs = self.processor(images=image, text=prompt, return_tensors="pt").to(self.device)
-        yes_id = self.cfg.tokens.yes
-
         yes_count = 0
+        sampled_tokens: list[str] = []
         with torch.inference_mode():
             for _ in range(n_samples):
                 out = self.model.generate(
@@ -495,7 +494,11 @@ class MedGemmaInference:
                     return_dict_in_generate=True,
                 )
                 sampled_id = int(out.sequences[0, inputs["input_ids"].shape[1]].item())
-                if sampled_id == yes_id:
+                # Chequeo robusto: el modelo puede muestrear cualquier variante
+                # ("yes"=4443, "Yes"=10784, "▁yes"=11262...) — comparar por texto
+                gen_tok = self.processor.tokenizer.decode([sampled_id]).strip().lower()
+                sampled_tokens.append(gen_tok)
+                if gen_tok.startswith("yes"):
                     yes_count += 1
 
         frac_yes = yes_count / n_samples
@@ -507,6 +510,7 @@ class MedGemmaInference:
         return {
             "self_consistency_frac_yes": frac_yes,
             "self_consistency_entropy": float(entropy_sc),
+            "sc_samples": ",".join(sampled_tokens),
         }
 
     # ------------------------------------------------------------------
@@ -936,7 +940,8 @@ def run_self_consistency(cfg: Config, n_images: int = 50, n_samples: int = 10,
             if seed is not None:
                 record["seed"] = seed
             append_result(cfg, record, filename="results_self_consistency.csv")
-            print(f"[sc] {row['image_filename']} {prompt_id}: frac_yes={signals['self_consistency_frac_yes']:.2f}")
+            print(f"[sc] {row['image_filename']} {prompt_id}: frac_yes={signals['self_consistency_frac_yes']:.2f}"
+                  f" | muestras: {signals['sc_samples']}")
 
 
 # ------------------------------------------------------------------------------
