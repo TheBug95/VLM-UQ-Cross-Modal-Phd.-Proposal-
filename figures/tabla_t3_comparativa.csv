@@ -1,0 +1,7 @@
+Method,Single-pass,Training-free,Cross-modal,Cost
+MC-Dropout,No,No,No,10–100×
+Semantic Entropy,No,Yes,No,10×
+UMPIRE,No,Yes,No,Multi-sample
+VIG-TUQ,Attention only,Yes,Yes,"1× (attention), 2× (JSD)"
+SAPLMA (probes),Yes,No,No,Supervised
+Ours (cross-modal KL),Yes,Yes,Yes,1×

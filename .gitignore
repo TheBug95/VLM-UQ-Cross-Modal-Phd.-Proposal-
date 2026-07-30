@@ -32,7 +32,6 @@ venv.bak/
 
 # Datos y resultados (no subir dataset; results y figures sí se versionan)
 data/
-*.csv
 *.tsv
 
 # Modelos y checkpoints

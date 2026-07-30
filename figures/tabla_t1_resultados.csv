@@ -1,0 +1,8 @@
+Signal,AUROC,AUPRC,AURC,Excess-AURC,Sens@80%Spec,Cost
+Model base accuracy (0.798),—,—,—,—,—,—
+KL cross-modal (kl_t_v_L34_tau1.0_max),0.661,0.329,0.1425,0.670,0.423,1×
+"KL v→t (mirror, kl_v_t_L34_tau1.0_max)",0.566,0.293,0.1657,0.800,0.308,1×
+Entropy,0.624,0.277,0.1536,0.732,0.385,1×
+1 - MSP,0.624,0.277,0.1536,0.732,0.385,1×
+Energy,0.560,0.242,0.1828,0.895,0.308,1×
+rank(KL) + rank(1-MSP),0.698,0.375,0.0955,0.407,0.308,1×
