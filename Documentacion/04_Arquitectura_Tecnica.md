@@ -16,6 +16,8 @@
 
 ![Pipeline del experimento](assets/fig1_pipeline.png)
 
+> **Nota sobre el panel 7 (Selective Triage) de la figura:** el **θ** que aparece ahí es el **umbral de triage** sobre u(x): los casos por encima de θ se derivan al especialista y los de abajo se auto-responden. θ no es una constante absoluta — se define como **percentil de la cohorte** (ej.: derivar el 20% más incierto ⇒ θ = percentil 80 de u(x)). La explicación completa, con la "fila de pacientes" y ejemplos numéricos, está en la [§6.6](06_Resultados_Experimentales.md#6.6-accuracy-coverage-aplicación-clínica-y-zona-verde). Advertencia de la figura: la etiqueta "Acc @ 70% Ref: 84.4%" corresponde a la KL sola a cobertura 70%; la combinación reporta 82.2% en ese punto (89.1% a cobertura 50% en ambas).
+
 ```mermaid
 flowchart LR
     subgraph IN["Entrada (1 caso)"]
@@ -39,8 +41,6 @@ flowchart LR
 ---
 
 ## 4.2 Extracción de representaciones internas
-
-$$\theta = \text{cuantil}{1-r}\big(u{\text{combo}}(x)\big)$$
 
 Con `max_new_tokens=1`, `output_hidden_states=True`, `output_scores=True` y greedy decoding bajo `torch.inference_mode()`:
 

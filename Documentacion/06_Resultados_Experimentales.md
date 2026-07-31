@@ -117,6 +117,52 @@ Mejora de **+5.5% AUROC sobre la KL sola** y **+11.9% sobre 1−MSP solo**, con 
 
 ## 6.6 Accuracy-Coverage (aplicación clínica) y zona verde
 
+### ¿Qué es θ (theta)? El umbral de triage explicado con la fila de pacientes
+
+Toda la idea cabe en una imagen mental: **la fila**. Ordenamos las 129 imágenes de **menos a más incierto** según u(x):
+
+```
+posición:  1                                          129
+           |-------------------------------------------|
+           más confiable                        más sospechoso
+```
+
+- La **posición 1** es la imagen sobre la que el sistema está más seguro; la **129**, la más sospechosa.
+- Los 26 errores del modelo **no** están repartidos parejo: se amontonan hacia el final de la fila. Eso es exactamente lo que hace útil a la señal.
+
+**θ es simplemente el punto donde trazamos la raya en esa fila:** todo caso con u(x) **mayor** que θ se deriva al oftalmólogo; todo caso por debajo lo responde el modelo solo.
+
+**Ejemplo pequeño (6 imágenes, 2 errores E y F):**
+
+| imagen | u(x) | posición | realidad |
+|---|---|---|---|
+| A | 0.32 | 1 | correcta |
+| B | 0.55 | 2 | correcta |
+| C | 0.69 | 3 | correcta |
+| D | 1.10 | 4 | correcta |
+| E | 1.56 | 5 | **ERROR** |
+| F | 1.90 | 6 | **ERROR** |
+
+Con θ = 1.10 (regla: u > θ se deriva): A–D las responde el modelo (todas correctas → accuracy 100% en lo retenido) y E, F van al doctor (los 2 errores capturados). Sin el corte, el modelo acertaba 4/6 = 66.7%; con el corte, 4/4 = 100%.
+
+**Los valores reales de θ en nuestra cohorte (P1, u_combo, N=129):**
+
+| Decisión de triage | θ (punto de corte) | Accuracy en lo retenido |
+|---|---|---|
+| Derivar el 10% más incierto | 1.721 (percentil 90) | 81.9% |
+| Derivar el 20% | 1.566 (percentil 80) | 81.6% |
+| Derivar el 30% | 1.318 (percentil 70) | 82.2% |
+| Derivar el 50% | 0.895 (percentil 50) | **89.1%** |
+| **Zona verde** (auto-responder la cola) | 0.686 (~percentil 30) | **100%** (39 casos, en esta cohorte) |
+
+Cómo leer la primera fila: las 13 imágenes más inciertas (10% de 129) van al doctor; quedan 116; de esas, el modelo acierta el 81.9%. Como la base era 79.8%, esas 13 derivadas contenían 5 de los 26 errores: el 10% de la fila atrapó el 19% de los errores. Y derivando el 50%, 19 de los 26 errores (73%) quedan del lado del doctor.
+
+**¿Por qué θ se expresa como percentil y no como un número fijo?** Porque el valor absoluto de u(x) solo tiene sentido relativo a la fila de esta cohorte (los nats absolutos de la KL dependen del `epsilon` y del hardware, ver [§8.3](08_Discusion_y_Limitaciones.md)). Lo que se puede llevar a pacientes nuevos es la **regla** ("derivo el 10% más incierto de los que lleguen"), no el número 1.721. Además, por protocolo, θ se fija con el split de train y se reporta congelado.
+
+**¿Cómo se elige θ en la práctica?** Tres criterios legítimos: (a) **capacidad clínica** — cuántos casos puede revisar el especialista; (b) **especificidad objetivo** — p. ej. "alarmar como máximo al 20% de los casos correctos" (el Sens@80%Spec de la Tabla T1); (c) **esquema de 3 zonas con dos umbrales** — θ_bajo ≈ percentil 30 (auto-responder, la zona verde) y θ_crítico ≈ percentil 80–90 (derivación prioritaria), dejando la zona intermedia para pruebas confirmatorias (OCT, campo visual).
+
+---
+
 ![Accuracy vs. Coverage](assets/fig4_accuracy_coverage.png)
 
 Si el sistema deriva al oftalmólogo el X% más incierto y auto-responde el resto:

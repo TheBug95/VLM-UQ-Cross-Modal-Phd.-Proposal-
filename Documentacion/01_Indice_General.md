@@ -89,6 +89,7 @@ Este proyecto demuestra que cuando MedGemma-4B (un Vision-Language Model médico
 | **pooling** | Estrategia para resumir los 256 tokens de imagen en un solo vector (mean, max, roi, attn, topk, normw, rollout, headspec) |
 | **τ (temperatura)** | Factor que aplana/afila la softmax al convertir hidden states en distribuciones |
 | **u(x)** | Señal de incertidumbre de una imagen $x$; más alto = más sospechoso de error |
+| **θ (umbral de triage)** | Punto de corte sobre u(x): los casos con u(x) > θ se derivan al especialista, los demás se auto-responden. Se define como **percentil de la cohorte** (ej.: derivar el 20% más incierto ⇒ θ = percentil 80), nunca como valor absoluto de nats. Ver [§6.6](06_Resultados_Experimentales.md#6.6-accuracy-coverage-aplicación-clínica-y-zona-verde) |
 | **MSP (Maximum Softmax Probability)** | $\max(p_{yes}, p_{no})$; el baseline 1−MSP mide la duda del modelo |
 | **entropy (answer)** | Entropía binaria de $(p_{yes}, p_{no})$ |
 | **energy** | $-\mathrm{logsumexp}(\ell_{yes}, \ell_{no})$; baseline de igual costo |
