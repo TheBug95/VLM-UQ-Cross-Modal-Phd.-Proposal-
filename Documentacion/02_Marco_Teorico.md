@@ -92,15 +92,15 @@ Los métodos diseñados para modelos de lenguaje generativos se agrupan en cuatr
 
 Esta es la familia más cercana a nuestra propuesta y la que define su novedad. Un especialista externo verificó que **la combinación MedGemma 4B + divergencia KL cross-modal en un solo forward pass + UQ para glaucoma no existe previamente en la literatura**:
 
-| Trabajo | Modelo | Mecanismo de divergencia/distancia | Modalidad de inferencia | Aplicación |
-|---|---|---|---|---|
-| **Nuestro** | **MedGemma 4B** | **KL cross-modal (hidden states visuales vs. textual del decoder)** | **Single forward pass O(1)** | **UQ en glaucoma (retinografía)** |
-| NoLan (2024) | LLaVA / Vicuna | KL entre P(multimodal) y P(solo texto) | Múltiples pasadas (contraste) | Mitigación de alucinaciones |
-| VCD (Leng et al., 2024) | MLLMs genéricos | KL entre imagen original vs. distorsionada | Múltiples pasadas (contraste) | Reducción de alucinaciones de objetos |
-| ConVis (2024) | MLLMs | KL con imagen reconstruida | Múltiples pasadas (contraste) | Alucinaciones |
-| FUSE (2024) | CLIP + LLM | Procesos gaussianos + diversidad semántica | Muestreo multi-respuesta | Incertidumbre epistémica |
-| Dropout Decoding | LVLMs | Ensamble por máscara de tokens visuales (majority voting) | Múltiples subconjuntos | Incertidumbre perceptual |
-| FairCLIP (Luo et al., 2024) | CLIP / BLIP-2 | Distancia de Sinkhorn (transporte óptimo) | Alineación de embeddings | Equidad diagnóstica en glaucoma (Harvard-FairVLMed, 10.000 imgs) |
+| Trabajo                     | Modelo          | Mecanismo de divergencia/distancia                                  | Modalidad de inferencia       | Aplicación                                                       |
+| --------------------------- | --------------- | ------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------- |
+| **Nuestro**                 | **MedGemma 4B** | **KL cross-modal (hidden states visuales vs. textual del decoder)** | **Single forward pass O(1)**  | **UQ en glaucoma (retinografía)**                                |
+| NoLan (2024)                | LLaVA / Vicuna  | KL entre P(multimodal) y P(solo texto)                              | Múltiples pasadas (contraste) | Mitigación de alucinaciones                                      |
+| VCD (Leng et al., 2024)     | MLLMs genéricos | KL entre imagen original vs. distorsionada                          | Múltiples pasadas (contraste) | Reducción de alucinaciones de objetos                            |
+| ConVis (2024)               | MLLMs           | KL con imagen reconstruida                                          | Múltiples pasadas (contraste) | Alucinaciones                                                    |
+| FUSE (2024)                 | CLIP + LLM      | Procesos gaussianos + diversidad semántica                          | Muestreo multi-respuesta      | Incertidumbre epistémica                                         |
+| Dropout Decoding            | LVLMs           | Ensamble por máscara de tokens visuales (majority voting)           | Múltiples subconjuntos        | Incertidumbre perceptual                                         |
+| FairCLIP (Luo et al., 2024) | CLIP / BLIP-2   | Distancia de Sinkhorn (transporte óptimo)                           | Alineación de embeddings      | Equidad diagnóstica en glaucoma (Harvard-FairVLMed, 10.000 imgs) |
 
 Puntos clave del análisis de novedad (que reaparecen en la discusión, [§8.1b](08_Discusion_y_Limitaciones.md)):
 
