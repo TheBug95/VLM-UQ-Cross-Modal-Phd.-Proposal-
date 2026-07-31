@@ -195,6 +195,30 @@ class MedGemmaInference:
             "pred": pred,
         })
 
+        # --- Red de seguridad: verificar el token realmente generado ---------
+        # El pred sale de comparar logits yes/no; aquí confirmamos que el token
+        # que el modelo generó greedy es una variante aceptada de yes/no y que
+        # su polaridad coincide con el pred. Cualquier deriva futura (otro
+        # modelo, otro chat template) queda como flag visible, no error silencioso.
+        gen_ids = out.sequences[0, inputs["input_ids"].shape[1]:]
+        answer_token = self.processor.tokenizer.decode(gen_ids).strip().lower()
+        answer_token_ok = int(answer_token in ("yes", "no"))
+        polarity_ok = answer_token_ok and int((answer_token == "yes") == bool(pred))
+        if not answer_token_ok:
+            warnings.warn(
+                f"Token de respuesta inesperado: {answer_token!r} "
+                f"(pred por logits = {'yes' if pred else 'no'})"
+            )
+        elif not polarity_ok:
+            warnings.warn(
+                f"Polaridad inconsistente: token={answer_token!r} vs pred por logits={'yes' if pred else 'no'}"
+            )
+        results.update({
+            "answer_token": answer_token,
+            "answer_token_ok": answer_token_ok,
+            "polarity_ok": int(polarity_ok),
+        })
+
         # --- Baselines de salida -------------------------------------------
         eps = self.cfg.uncertainty.epsilon
         entropy = float(-(probs * torch.log(probs + eps)).sum().item())
@@ -648,6 +672,7 @@ def to_long_format(
         "image_filename", "patient_id", "prompt_id", "split",
         "logit_yes", "logit_no", "p_yes", "pred", "label", "correct",
         "entropy_answer", "msp_answer", "energy_answer",
+        "answer_token", "answer_token_ok", "polarity_ok",
         "inference_ms", "seed",
     ]
 
