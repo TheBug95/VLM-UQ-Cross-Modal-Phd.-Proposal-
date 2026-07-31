@@ -211,7 +211,7 @@ def draw_pipeline_figure(output_path: Path):
     _math(ax, b6_x + b6_w/2, b6_y + 5.9, r"$u_{combo} < \theta$", fs=8.5, c=C_GREEN)
     _text(ax, b6_x + b6_w/2, b6_y + 5.3, "[ACCEPT DIAGNOSIS]", fs=8.5, c=C_GREEN, w="bold")
     _text(ax, b6_x + b6_w/2, b6_y + 4.7, "Autonomous VLM Output\nGlaucoma / Normal", fs=7.5, c="#1E8449")
-    _text(ax, b6_x + b6_w/2, b6_y + 4.1, "Acc @ 70% Ret: 84.4%\nAcc @ 50% Ret: 89.1%", fs=7.5, c="#1E8449", w="bold")
+    _text(ax, b6_x + b6_w/2, b6_y + 4.1, "Acc @ 70% coverage: 82.2%\nAcc @ 50% coverage: 89.1%", fs=7.5, c="#1E8449", w="bold")
 
     # Branch 2: High Uncertainty (Red)
     _box(ax, b6_x + 0.2, b6_y + 0.4, b6_w - 0.4, 3.1, fc=C_RED_BG, ec=C_RED, lw=1.8)
