@@ -447,7 +447,8 @@ Crea primero la subcarpeta `Documentacion/assets/` y copia allí todas las figur
   - La elección de `epsilon` afecta los valores absolutos de KL (mantenerlo fijo entre corridas)
   - **PENDIENTE OBLIGATORIO (diseño congelado):** análisis de robustez excluyendo imágenes con `has_annotation_artifact` (p. ej. la flecha quemada de `1281_right.jpg`) — debe reportarse antes de cualquier submission
 - §8.5 Trabajo futuro (roadmap para la tesis):
-  - Escalar a datasets más grandes (RIM-ONE, REFUGE, ORIGA)
+  - **Generalización de binario a tarea libre (segundo paper — diseño detallado en `Reporte_Experimento_BIP2026.md` §11):** señales por token D1 `KL(h_t‖p_vis)` (grounding por palabra, anti-dilución con max) y D2 `KL(h_v‖p_text)` (mapa espacial de neglect, validable contra las 69 máscaras de disco); confianza de secuencia (log-prob medio o eslabón mínimo); evaluación por conclusión forzada (parsing determinista, labels existentes), corrupción controlada y mini-auditoría humana; riesgos a pilotear (saturación por token, inversión espacial tipo ROI 0.349, dilución de fondo en D2-media); receta de deployment con θ absoluto congelado por stack + modo screening por lotes. El caso binario del paper 1 queda como caso particular (D1 con 1 token ≡ kl_t_v actual).
+  - Escalar a datasets más grandes (RIM-ONE, REFUGE, ORIGA, Harvard-FairVLMed)
   - Probar con otros VLMs (LLaVA-Med, GPT-4V, Gemini Pro Vision)
   - Gradient-weighted pooling como alternativa a max pooling
   - Integración con triage automatizado en clínica oftalmológica

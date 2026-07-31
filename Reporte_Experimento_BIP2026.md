@@ -265,3 +265,81 @@ Las dos señales son **testigos que vieron cosas distintas**: su correlación es
 | Prompt con rol (P4) vs simple (P1)  | P1 mejor en todo                                              |
 
 **Archivos de soporte:** datos en `results/results_full.csv` (formato largo), resumen estadístico en `results/evaluation_summary.csv`, análisis de la combinación en `results/analisis_combinacion.py` y `results/analisis_ranks_mc.py`, figuras en `figures/fig2`–`fig5`.
+
+---
+
+## 11. Trabajo futuro: generalización de binario a tarea libre (segundo paper)
+
+> **Estado:** NO implementado. Diseño detallado acordado (29-jul-2026, tras reunión de tutores). El paper actual cubre la respuesta binaria (yes/no); este es el plan para la versión task-general sobre descripciones clínicas libres.
+
+### 11.1 La pregunta que responde
+
+Los tutores preguntaron: la señal funciona para clasificación binaria, pero ¿y cuando el modelo **describe** la imagen (texto libre)? La respuesta conceptual: el **principio** (desacuerdo cross-modal como UQ) y el **esquema de evaluación** (ranking señal vs. error) son task-agnostic; lo que se rediseña por tarea es (a) la instanciación de la señal por token y (b) la medida de error.
+
+### 11.2 Lo que NO cambia (heredado del paper 1)
+
+- Single-pass (costo 1×), training-free, modelo frozen.
+- Evaluación por ranking (AUROC/AURC si el error es binario; Spearman u(x)↔error si es continuo).
+- Fusión parameter-free por ranks: `rank(señal interna) + rank(1 − confianza de salida)`.
+- Protocolo: variantes computadas en una pasada, selección solo en train, reporte congelado.
+
+### 11.3 Las dos señales nuevas (D1 y D2)
+
+Notación: `h_v` = hidden state de cada token de visión (256 parches), `h_t` = hidden state de cada token de texto generado, `p_vis` = max pooling de visión (configuración ganadora congelada), `p_text` = pooling de los hidden states de la respuesta.
+
+**D1 — grounding por palabra:** `KL(h_t ‖ p_vis)` por cada token de la respuesta, agregado por media y por máximo.
+
+- Pregunta que responde: *"¿cada afirmación del texto está anclada en la imagen?"*
+- La variante **max** es anti-dilución: detecta la única frase alucinada entre cien correctas (el equivalente textual de por qué max pooling ganó en la imagen).
+- **Caso especial:** con respuesta de 1 token (yes/no), D1 se reduce exactamente a la `kl_t_v` actual — el paper binario queda como caso particular del marco general.
+
+**D2 — neglect por parche:** `KL(h_v ‖ p_text)` por cada token de visión, agregado por media y por máximo.
+
+- Pregunta que responde: *"¿qué regiones de la imagen NO quedaron reflejadas en la respuesta?"*
+- Es la señal potencialmente nueva: un **mapa espacial de desacuerdo cross-modal** — validable contra las 69 máscaras de disco del dataset (¿el desacuerdo se concentra en el disco cuando el modelo falla?).
+- **Advertencia empírica:** el pooling ROI dio AUROC 0.349 (invertido) en las 69 patológicas — las señales espaciales pueden comportarse contra-intuitivamente. D2 se pilotea, no se asume.
+
+### 11.4 La confianza de salida para secuencias
+
+En binario: MSP sobre los 2 logits (softmax restringida). En texto libre: cada token generado tiene su softmax de vocabulario completo; la confianza de secuencia se agrega como **log-prob medio** de los tokens generados (o el mínimo = eslabón más débil, que suele ser el término clínico crítico). La fusión queda: `rank(variante KL) + rank(1 − confianza_secuencia)`.
+
+### 11.5 Evaluación: cómo se obtiene el error en texto libre
+
+La evaluación de UQ siempre requiere un indicador de error; la pregunta correcta es a qué costo se obtiene. Tres vías (de más barata a más fuerte):
+
+1. **Conclusión forzada (gratis, exacta):** el prompt pide la descripción y obliga a terminar con una línea fija (`Conclusion: normal|glaucoma|...`). El parsing es determinista; `correct = (clase extraída == label real)`. La descripción es el razonamiento; la evaluación sigue siendo binaria con los labels que ya tenemos.
+2. **Corrupción controlada (cero labels clínicos):** degradar imágenes (blur, oclusión, brillo) en severidades crecientes — la señal debe subir monótonamente; AUROC limpia-vs-corrupta + curva de severidad. Valida que la señal "dispara cuando debe"; no mide errores clínicos (complemento, no sustituto).
+3. **Mini-auditoría humana (oro):** ~30 descripciones marcadas por el oftalmólogo en una tarde → métricas completas con IC ancho pero honesto.
+
+Métricas a reportar: AUROC/AURC (ranking), **precisión@k / error capture rate** ("derivando el X%, captura Y de Z errores"), accuracy-coverage y zona verde.
+
+### 11.6 Riesgos a pilotear antes de cualquier AUROC
+
+1. **Saturación por token individual:** la KL ya vive cerca del techo del eps (~23) con representaciones agregadas; con tokens individuales puede colapsar del todo. Piloto de 20 imágenes midiendo varianza entre casos ANTES de evaluar.
+2. **Inversión espacial (ver 11.3-D2):** el precedente ROI (0.349) obliga a medir, no asumir.
+3. **Dilución de fondo en D2-media:** los parches de fondo nunca aparecen en una respuesta de glaucoma (ruido casi constante); la señal vive en max o en la región del disco.
+
+### 11.7 Receta de deployment (producción)
+
+| Componente | Decisión |
+|---|---|
+| Prompt | Descripción + línea de conclusión forzada |
+| Parser de conclusión | Determinista (última línea), sin modelo extra (costo 1× intacto) |
+| u(x) | Variante ganadora seleccionada en train |
+| θ | **Valor absoluto congelado** de la cohorte de calibración (un paciente nuevo no tiene cohorte para percentiles) |
+| Recalibración | Solo si cambia el stack (modelo/eps/hardware) — como los valores de referencia de un laboratorio |
+| Modo alternativo | Screening por lotes: percentil dentro del batch del día |
+
+### 11.8 Contribución esperada del segundo paper
+
+1. Marco task-general de UQ cross-modal (binario como caso particular).
+2. **Mapas de neglect cross-modal** (D2): interpretabilidad espacial validada contra máscaras anatómicas — une UQ y XAI.
+3. Receta de deployment con θ congelado y regla de recalibración.
+
+### 11.9 Plan de ejecución (para cuando se retome)
+
+1. Implementar D1/D2 (mean/max) en `src/uncertainty.py` + columnas en `src/inference.py`.
+2. Piloto 20 imágenes (binario): chequeo de saturación.
+3. Corrida de descripciones (129 imágenes, prompt con conclusión forzada) en Colab.
+4. Evaluación: vías 11.5.1 + 11.5.2; mapas D2 vs máscaras de disco.
+5. Escribir el segundo paper con el marco general y los mapas.
