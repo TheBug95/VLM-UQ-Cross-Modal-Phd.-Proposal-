@@ -63,7 +63,7 @@ Dos decisiones numéricas críticas (verificadas en el piloto, ver [§12.3](12_V
 
 1. **float64 obligatorio.** Las *massive activations* de Gemma (valores de magnitud extrema en ciertas dimensiones) colapsan la softmax a distribuciones degeneradas incluso en float32: todo queda en unas pocas dimensiones y la KL se vuelve ruido binario. `F.log_softmax(..., dtype=torch.float64)` resuelve el problema.
 2. **Sin normalización previa (ni z-score ni norma L2).** Normalizar los vectores antes de la softmax aplana demasiado las diferencias entre casos: la KL queda ≈ 0 para todas las imágenes y la señal desaparece. Se usa la softmax **cruda** (solo dividida por τ), que preserva las diferencias relativas entre estados de imagen y texto.
-3. **Clamp $\varepsilon = 10^{-10}$:** antes de la KL, ambas distribuciones se recortan a un mínimo de $\varepsilon$ para evitar $\log 0$. Esto pone un **techo winsorizador** a la KL en $\ln(1/\varepsilon) = 23.03$ nats (53/129 imágenes quedan en el techo; es por diseño, ver [§12.5](12_Verificacion_y_Validacion.md)).
+3. **Clamp $\varepsilon = 10^{-10}$:** antes de la KL, ambas distribuciones se recortan a un mínimo de $\varepsilon$ para evitar $\log 0$. Esto pone un **techo winsorizador** a la KL en $\ln(1/\varepsilon) = 23.03$ nats. Saturación real medida sobre `results_full.csv` (cifra corregida 04-ago): en la variante ganadora (kl_t_v, max, τ=1) **24/129** imágenes superan los 23.0 nats sin llegar al techo exacto (máx. observado 23.0238); el techo exacto (23.0259) sí se satura en la dirección espejo (kl_v_t, max: **61/129**). Es por diseño, ver [§12.5](12_Verificacion_y_Validacion.md).
 
 ---
 

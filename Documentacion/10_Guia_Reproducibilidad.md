@@ -59,6 +59,7 @@ python validacion/val_05_metrics.py
 python validacion/val_06_stats.py
 python validacion/val_04_generate_api.py   # requiere GPU + licencia
 python validacion/val_07_pilot.py          # requiere GPU + licencia
+python validacion/val_09_calibracion.py    # sanity sintético de calibración (sin GPU)
 
 # 1. Descarga de datos + tabla maestra + auditoría de artefactos
 python -m src.data
@@ -84,13 +85,13 @@ python -m src.inference --self-consistency --seeds 42 123
 # 6. Estadística y figuras
 python -m src.evaluation          # guarda results/evaluation_summary.csv
 python -m src.evaluation --all-signals   # tabla rápida de AUROC por variante
-python -m src.figures             # Figuras 2–9 + Tablas T1–T4
+python -m src.figures             # Figuras 2–10 + Tablas T1–T5
 
 # 7. Verificación independiente (recomendado siempre)
 python validacion/val_08_resultados.py   # 19 checks; debe imprimir 19/19 PASS
 ```
 
-## 10.5 Validaciones pre-implementación (7 scripts)
+## 10.5 Validaciones pre-implementación (val_01–val_07) y sanity sintético (val_09)
 
 | Script | Qué valida |
 |---|---|
@@ -101,6 +102,7 @@ python validacion/val_08_resultados.py   # 19 checks; debe imprimir 19/19 PASS
 | `val_05_metrics.py` | Implementaciones de AUROC/AUPRC contra sklearn |
 | `val_06_stats.py` | Bootstrap BCa, Mann-Whitney, permutación de Spearman |
 | `val_07_pilot.py` | Piloto end-to-end con reglas numéricas duras (float64, softmax cruda) — origen de las decisiones de [§4.3](04_Arquitectura_Tecnica.md) |
+| `val_09_calibracion.py` | Código de calibración contra datos sintéticos (Platt, bins, ECE, correlaciones, TPR@FPR): 6 checks V-CAL, sin GPU — respalda los números de [§6.13](06_Resultados_Experimentales.md) |
 
 ## 10.6 Verificación de resultados: conteos y checksums esperados
 
@@ -117,6 +119,8 @@ Tras la corrida completa, verificar:
 | `results_verbalized.csv` | 129 filas; solo 2 valores de confianza: 95 (n=118), 90 (n=11) |
 | `results_self_consistency.csv` | 100 filas (50 imgs × 2 prompts) |
 | `validacion/val_08_resultados.py` | **19/19 checks PASS** |
+| `validacion/val_09_calibracion.py` | **6/6 checks PASS** (sintético, sin GPU) |
+| `figures/fig10_reliability.png` + `figures/tabla_t5_calibracion.csv` | Generados por `python -m src.figures` (calibración estilo FUSE §5.2) |
 | Regla de portabilidad | Mantener `epsilon = 1.0e-10` fijo (`config.yaml`); NO comparar nats absolutos entre corridas con eps distinto; derivación clínica por percentil de cohorte |
 
 **Nota sobre reproducibilidad cross-hardware:** los logits son bitwise reproducibles entre GPUs (0/129 predicciones cambian); la KL puede variar ~0.4 nats por backend de atención (eager vs. sdpa) sin afectar el ranking (Spearman 0.964, ΔAUROC 0.016) — ver [§12.4](12_Verificacion_y_Validacion.md).

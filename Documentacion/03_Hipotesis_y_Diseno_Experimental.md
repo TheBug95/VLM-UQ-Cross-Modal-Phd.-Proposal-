@@ -56,7 +56,7 @@ flowchart TD
     E --> G["Selección de ganadora<br/>SOLO en train (77)"]
     G --> H["Evaluación principal (129):<br/>AUROC/AUPRC + BCa CI,<br/>Mann-Whitney, AURC/Excess,<br/>accuracy-coverage, Spearman H4"]
     H --> I["Monte Carlo CV<br/>200 splits estratificados"]
-    H --> J["Figuras 2–9 + Tablas T1–T4"]
+    H --> J["Figuras 2–10 + Tablas T1–T5"]
 ```
 
 ---
@@ -88,6 +88,8 @@ Notas de diseño:
 | **AURC / Excess-AURC** | Selective prediction (Geifman & El-Yaniv, 2017): riesgo del modelo integrado sobre todos los niveles de derivación | Excess normalizado: **0 = oracle, 1 = azar**, menor = mejor; premia la pureza de la cabeza de la lista de derivación |
 | **Accuracy-coverage** | Accuracy reteniendo el X% menos incierto | Rango completo 0–1 de cobertura |
 | **Spearman rho (H4)** | Correlación $u(x)$ vs. `cdr_grade` en los 69 patológicos | Significancia por **test de permutación** |
+| **TPR @ FPR fijo (5%/10%/20%)** | Detección de errores en puntos operativos de alarma | Interpolación sobre `roc_curve`; TPR@FPR20% ≡ Sens@80%Spec (control de coherencia) |
+| **Calibración (ECE, Brier, correlaciones)** | Si a mayor $u(x)$ mayor probabilidad empírica de error | Platt scaling ajustado SOLO en train; bins equiprobables (10 ≈ 13 obs/bin); IC bootstrap percentil; evidencia **secundaria** ([§6.13](06_Resultados_Experimentales.md)) |
 | **Monte Carlo CV** | Generalización: media ± std del AUROC en 200 splits estratificados | Anidado (re-selección) vs. congelado |
 
 **Criterio de éxito (congelado):** AUROC ≥ 0.65 con IC bootstrap 95% reportado honestamente. Con N = 129 el IC es ancho (±0.10–0.13): si excluye 0.5 hablamos de *evidencia fuerte*; si no, de *evidencia sugestiva*. El punto Go/No-Go del proyecto se fijó al terminar la estadística principal (día 4), con plan de contingencia documentado en la definición (§8.3 de la definición).

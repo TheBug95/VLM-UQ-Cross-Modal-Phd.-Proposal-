@@ -33,10 +33,10 @@ VLM-UQ-Cross-Modal-Phd.-Proposal-/
 │   ├── __init__.py
 │   ├── config.py                   # Carga config.yaml; resuelve token IDs desde HF (259 líneas)
 │   ├── data.py                     # Descarga dataset, master_table.csv, auditoría de artefactos (424)
-│   ├── inference.py                # Pipeline MedGemma: single-pass + P5 + SC (1117)
+│   ├── inference.py                # Pipeline MedGemma: single-pass + P5 + SC (1142)
 │   ├── uncertainty.py              # 8 estrategias de pooling + heatmaps (467)
-│   ├── evaluation.py               # AUROC/AUPRC BCa, Mann-Whitney, H4, AURC, acc-cov (609)
-│   ├── figures.py                  # Figuras 2–9 y tablas T1–T4 (743)
+│   ├── evaluation.py               # AUROC/AUPRC BCa, Mann-Whitney, H4, AURC, acc-cov, TPR@FPR, calibración (812)
+│   ├── figures.py                  # Figuras 2–10 y tablas T1–T5 (819)
 │   └── generate_pipeline_fig.py    # Diagrama del pipeline (fig1)
 ├── data/
 │   ├── mm_odir_129/                # Dataset (annotations.json, split.json, train/val/test/)
@@ -50,12 +50,14 @@ VLM-UQ-Cross-Modal-Phd.-Proposal-/
 │   ├── acc_cov_P1_winner.csv       # Accuracy-coverage (ganadora y combinación, P1 y P4)
 │   ├── verificacion_manual_kl.csv  # KL recomputada manualmente en otra GPU
 │   └── analisis_*.py / verificacion_zona_verde.py  # Scripts de análisis y verificación
-├── figures/                        # Figuras 2–9, heatmaps, tablas T1–T4 (CSV)
+├── figures/                        # Figuras 2–10, heatmaps, tablas T1–T5 (CSV)
 ├── validacion/
 │   ├── val_01_environment.py … val_07_pilot.py   # Validaciones pre-implementación
-│   └── val_08_resultados.py        # 19 checks independientes del pipeline (215 líneas)
+│   ├── val_08_resultados.py        # 19 checks independientes del pipeline (215 líneas)
+│   └── val_09_calibracion.py       # 6 checks sintéticos del código de calibración (140)
 ├── Definicion_Experimental_Minima_BIP2026.md   # Especificación congelada (v2)
 ├── Reporte_Experimento_BIP2026.md  # Reporte consolidado (fuente primaria de números)
+├── Informe_Investigacion_BIP2026.tex   # Informe de investigación extendido (LaTeX)
 ├── Analisis_Dataset_MM_ODIR_129.md / research/ # Análisis del dataset + dossier (10 dims)
 └── Documentacion/                  # ← Esta documentación
 ```
@@ -90,11 +92,11 @@ VLM-UQ-Cross-Modal-Phd.-Proposal-/
 
 ### `src/evaluation.py` — estadística
 
-Sobre el formato largo (`load_results()` normaliza las filas `kl_prompt_L34` que quedaron con layer/τ desalineados en el CSV — fix pendiente en inference): `signal_frame()`, `baseline_values()`, `rank_combination_frame()` (la combinación por ranks), `bootstrap_ci()` (BCa 9.999), `mann_whitney_effect()`, `spearman_h4()` (con permutación), `sensitivity_at_specificity()`, `accuracy_coverage()`, `aurc()` / `aurc_oracle()` / `excess_aurc()` (selective prediction), `select_winner()` (solo en train, excluye poolings oracle) y `analyze_frame()`. Guarda `results/evaluation_summary.csv`.
+Sobre el formato largo (`load_results()` normaliza las filas `kl_prompt_L34` que quedaron con layer/τ desalineados en el CSV — fix pendiente en inference): `signal_frame()`, `baseline_values()`, `rank_combination_frame()` (la combinación por ranks), `bootstrap_ci()` (BCa 9.999), `mann_whitney_effect()`, `spearman_h4()` (con permutación), `sensitivity_at_specificity()`, `accuracy_coverage()`, `aurc()` / `aurc_oracle()` / `excess_aurc()` (selective prediction), `tpr_at_fpr()` (TPR a FPR fijos 5/10/20%), la suite de calibración estilo FUSE §5.2 — `platt_calibrate()` (sigmoide 1-feature $u \rightarrow P(error)$, ajustada SOLO en train), `calibration_bins()` (equiprobables), `expected_calibration_error()` (+ sensibilidad con 5 bins), `calibration_correlations()` (Pearson/Spearman), `calibration_analysis()` (Brier, IC bootstrap percentil 95%, flag `in_sample`) —, `select_winner()` (solo en train, excluye poolings oracle) y `analyze_frame()`. Guarda `results/evaluation_summary.csv`.
 
 ### `src/figures.py` — figuras y tablas
 
-`fig2_boxplot()` (por señal), `fig3_roc_pr()`, `fig4_accuracy_coverage()` (con AURC/Excess por señal), `fig5_quadrants()` (con transcripciones clínicas), `fig6_correlation()` (Spearman entre señales), `fig7_tabla_t4_costo()` (scatter costo vs. AUROC + T4), `fig8_verbalized()`, `fig9_sc_boxplots()`, `table_t1/t2/t3()`. Reusa helpers de `evaluation`; la ganadora se elige en train o se pasa con `--signal`.
+`fig2_boxplot()` (por señal), `fig3_roc_pr()`, `fig4_accuracy_coverage()` (con AURC/Excess por señal), `fig5_quadrants()` (con transcripciones clínicas), `fig6_correlation()` (Spearman entre señales), `fig7_tabla_t4_costo()` (scatter costo vs. AUROC + T4), `fig8_verbalized()`, `fig9_sc_boxplots()`, `fig10_reliability()` (reliability diagram de calibración, Platt en train + bins equiprobables), `table_t1/t2/t3()` y `table_t5_calibracion()` (T5: discriminación + calibración lado a lado, espejo de FUSE Table 1). Reusa helpers de `evaluation`; la ganadora se elige en train o se pasa con `--signal`.
 
 ### Diagrama de flujo del pipeline
 
@@ -105,8 +107,8 @@ flowchart LR
     C --> D["python -m src.inference<br/>--verbalized (P5, 2×)<br/>--self-consistency (SC, 10×)"]
     C --> E["python -m src.evaluation<br/>estadística completa<br/>+ evaluation_summary.csv"]
     D --> E
-    E --> F["python -m src.figures<br/>Figuras 2–9, Tablas T1–T4"]
-    C -.-> V["validacion/val_08_resultados.py<br/>19 checks independientes"]
+    E --> F["python -m src.figures<br/>Figuras 2–10, Tablas T1–T5"]
+    C -.-> V["validacion/val_08_resultados.py<br/>19 checks independientes<br/>+ val_09 (6 checks calibración)"]
 ```
 
 ---
@@ -143,7 +145,7 @@ Las columnas de observación (logits, baselines, label, `correct`) se repiten de
 
 ### `results/evaluation_summary.csv`
 
-Una fila por `prompt × signal × split` con: `n, n_errors, auroc, auroc_ci_low/high, auprc(+CI), aurc, excess_aurc_norm, mannwhitney_p, effect_size_r, sens_80spec`. Es la fuente canónica de los números reportados en [06](06_Resultados_Experimentales.md).
+Una fila por `prompt × signal × split` con: `n, n_errors, auroc, auroc_ci_low/high, auprc(+CI), aurc, excess_aurc_norm, mannwhitney_p, effect_size_r, sens_80spec, tpr_fpr05/10/20, ece(+CI), cal_pearson, cal_spearman, brier, calibration_in_sample`. Es la fuente canónica de los números reportados en [06](06_Resultados_Experimentales.md).
 
 ### CSVs de baselines
 

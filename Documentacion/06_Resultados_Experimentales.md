@@ -58,9 +58,9 @@ La señal KL cross-modal es **significativamente mayor en los errores que en los
 | Accuracy del modelo base: 0.798 | — | — | — | — | — | — |
 | **KL cross-modal (kl_t_v_L34_tau1.0_max)** | **0.661** | **0.329** | **0.1425** | **0.670** | **0.423** | 1× |
 | KL v→t (espejo, kl_v_t_L34_tau1.0_max) | 0.566 | 0.293 | 0.1657 | 0.800 | 0.308 | 1× |
-| Entropy | 0.624 | 0.277 | 0.1536 | 0.732 | 0.385 | 1× |
-| 1 − MSP | 0.624 | 0.277 | 0.1536 | 0.732 | 0.385 | 1× |
-| Energy | 0.560 | 0.242 | 0.1828 | 0.895 | 0.308 | 1× |
+| Entropy | 0.624 | 0.277 | 0.1543 | 0.736 | 0.385 | 1× |
+| 1 − MSP | 0.624 | 0.277 | 0.1543 | 0.736 | 0.385 | 1× |
+| Energy | 0.560 | 0.242 | 0.1830 | 0.896 | 0.308 | 1× |
 | **rank(KL) + rank(1−MSP)** | **0.698** | **0.375** | **0.0955** | **0.407** | 0.308 | 1× |
 
 ---
@@ -198,8 +198,8 @@ El AURC (área bajo la curva riesgo-cobertura; Geifman & El-Yaniv, 2017) integra
 | **Combinación rank(KL)+rank(1−MSP)** | **0.0955** | **0.407** |
 | KL cross-modal | 0.1425 | 0.670 |
 | KL v→t (espejo) | 0.1657 | 0.800 |
-| Entropy / 1−MSP | 0.1536 | 0.732 |
-| Energy | 0.1828 | 0.895 |
+| Entropy / 1−MSP | 0.1543 | 0.736 |
+| Energy | 0.1830 | 0.896 |
 
 **El AURC amplifica el veredicto sobre la combinación:** 0.407 vs. 0.670 de la KL sola — un **39% más cerca del oracle**. El AURC premia acertar en la cabeza de la lista de derivación, que es exactamente donde la combinación es fuerte (57% de precisión en los 7 casos más inciertos vs. 29% de la KL sola). **Concordancia entre métricas:** Spearman(AUROC, Excess-AURC) = −0.51 sobre las 97 variantes — se correlacionan moderadamente pero no son redundantes: AUROC evalúa el ranking global, AURC los puntos operativos de triage. Las dos coinciden en elegir a la combinación como #1.
 
@@ -356,6 +356,41 @@ Top-20 por AUROC en la cohorte completa (referencia; la selección se hizo solo 
 | **Nuestro (KL cross-modal)** | **Sí** | **Sí** | **Sí** | **1×** |
 
 La comparación es sobre **propiedades del método**, no sobre AUROC directo: cada trabajo usa datasets y modelos distintos, así que los números no son conmensurables. Lo que la tabla muestra es que **ningún método publicado reúne simultáneamente** las tres propiedades que definen a la nuestra (single-pass + training-free + cross-modal) — ese es el nicho exacto de la contribución. El posicionamiento cualitativo frente a NoLan/VCD/ConVis/FUSE/Dropout Decoding/FairCLIP está en [§8.1b](08_Discusion_y_Limitaciones.md).
+
+---
+
+## 6.13 Calibración de la señal (análisis estilo FUSE §5.2; añadido 03-ago-2026)
+
+Además de discriminar (AUROC), una señal de triage idealmente debería estar **calibrada**: que a mayor $u(x)$ mayor probabilidad empírica de error. Se evaluó siguiendo el protocolo de FUSE §5.2 / Guo et al. (2017):
+
+- **Platt scaling** (sigmoide de 1 feature: $u \rightarrow P(error)$) ajustado **SOLO con el split train** (77 imágenes) y aplicado congelado al split de análisis.
+- **Bins equiprobables** (10 bins ≈ 13 observaciones/bin) para el reliability diagram y el **ECE** (Expected Calibration Error: media ponderada de $|\bar{u}_{bin} - error_{empírico,bin}|$), con sensibilidad a 5 bins.
+- **Correlaciones de calibración** Pearson/Spearman entre $u$ calibrada y tasa empírica de error por bin, y **Brier score**.
+- **IC bootstrap percentil 95%** (Platt fijo, remuestreo de observaciones); flag `in_sample` cuando el split de análisis es el propio train.
+- **TPR de detección de errores a FPR fijos** (5%, 10%, 20%) — puntos operativos de alarma; TPR@FPR20% coincide con el Sens@80%Spec de la Tabla T1 (0.423), control de coherencia.
+
+![Reliability diagram de calibración](assets/fig10_reliability.png)
+
+**Tabla T5 (discriminación + calibración lado a lado, espejo de FUSE Table 1; P1, N = 129):**
+
+| Señal | AUROC | TPR@FPR5% | TPR@FPR10% | TPR@FPR20% | ECE ↓ | Cal. Pearson | Cal. Spearman | Brier | Costo |
+|---|---|---|---|---|---|---|---|---|---|
+| **KL cross-modal (kl_t_v_L34_tau1.0_max)** | **0.661** | 0.077 | **0.269** | **0.423** | **0.087** | **0.748** | **0.789** | **0.159** | 1× |
+| KL v→t (espejo) | 0.566 | 0.115 | 0.192 | 0.308 | 0.074 | 0.283 | 0.532 | 0.164 | 1× |
+| Entropy | 0.624 | 0.038 | 0.102 | 0.385 | 0.116 | 0.094 | 0.612 | 0.164 | 1× |
+| 1 − MSP | 0.624 | 0.038 | 0.102 | 0.385 | 0.116 | 0.020 | 0.612 | 0.164 | 1× |
+| Energy | 0.560 | 0.038 | 0.077 | 0.308 | 0.111 | 0.269 | 0.181 | 0.164 | 1× |
+| rank(KL) + rank(1−MSP) | **0.698** | **0.154** | 0.192 | 0.308 | 0.145 | 0.549 | 0.656 | **0.159** | 1× |
+
+**Lectura:**
+
+- La KL cross-modal es la **mejor calibrada entre las señales 1× discriminativas**: ECE 0.087 (IC 95% [0.085, 0.185]) y correlaciones de calibración 0.748/0.789 — las más altas con diferencia. El espejo tiene ECE algo menor (0.074) pero no discrimina (AUROC 0.566) ni ordena la probabilidad de error (Pearson 0.283).
+- La **combinación discrimina más pero calibra peor** (ECE 0.145): al sumar ranks se gana orden global pero se pierde granularidad probabilística. Trade-off real a declarar en el paper: para triage por ranking se usa la combinación; para probabilidad de error interpretable, la KL sola.
+- Entropy/1−MSP tienen correlaciones de calibración **casi nulas** (Pearson 0.02–0.09): con la $p_{yes}$ saturada en ≈ 0.9999, la confianza de salida no dice nada sobre la probabilidad de error — la versión cuantitativa del argumento de sobreconfianza de [§8.1](08_Discusion_y_Limitaciones.md).
+- El Brier es casi idéntico en todas (≈ 0.16): lo domina la tasa base de error (0.202), no la señal.
+- En puntos operativos estrictos la señal es modesta: a FPR 5% solo captura el 7.7% de los errores; el punto clínicamente útil empieza en FPR 10–20%.
+
+**Advertencias honestas (evidencia SECUNDARIA):** (a) con N = 129 hay ~13 observaciones por bin: el ECE es ruidoso (IC ancho) y la Platt quedó ajustada con las mismas 77 imágenes de train que luego forman parte de la cohorte evaluada (parcialmente in-sample); (b) Platt es **monótona por construcción**, así que correlaciones altas no prueban calibración por sí solas — la evidencia principal es el ECE + el reliability diagram (Figura 10); (c) la calibración **no** entra en las hipótesis H1–H4: es un análisis complementario post-hoc. El código de calibración se validó contra datos sintéticos en `validacion/val_09_calibracion.py` (6/6 checks, [§12.3b](12_Verificacion_y_Validacion.md)).
 
 ---
 

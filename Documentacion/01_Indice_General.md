@@ -4,14 +4,14 @@
 
 **Autor:** Miguel Guillermo Abreu Cárdenas — Doctorado en Inteligencia Artificial aplicada a Oftalmología
 **Tutor:** Saúl Calderón Ramírez
-**Fecha de esta documentación:** 30 de julio de 2026
-**Estado del experimento:** ✅ Completo, con todos los baselines ejecutados y verificación independiente aprobada (19/19 checks)
+**Fecha de esta documentación:** 4 de agosto de 2026 (actualizada con el análisis de calibración estilo FUSE §5.2)
+**Estado del experimento:** ✅ Completo, con todos los baselines ejecutados, verificación independiente aprobada (19/19 checks) y validación sintética de calibración (6/6 checks)
 
 ---
 
 ## Resumen ejecutivo
 
-Este proyecto demuestra que cuando MedGemma-4B (un Vision-Language Model médico basado en Gemma 3) se equivoca al clasificar una imagen de fondo de ojo como glaucoma/normal, el **desacuerdo entre su representación visual interna y su representación textual** — medido por la divergencia KL entre los hidden states de los tokens de imagen y el estado que condiciona el token de respuesta, en la última capa del decoder — es significativamente mayor que cuando acierta (AUROC = 0.661, IC 95% [0.522, 0.772], p = 0.006). La señal es **training-free**, **single-pass** (costo computacional 1×) y **cross-modal**: tres propiedades que ningún método previo de Uncertainty Quantification (UQ) reúne simultáneamente. Además, la **fusión parameter-free por ranks** `rank(KL) + rank(1−MSP)` — contribución original del autor — mejora la detección de errores a AUROC = 0.698 y, sobre todo, reduce el riesgo de selective prediction (Excess-AURC = 0.407 frente a 0.670 de la KL sola), habilitando un esquema clínico de triage en tres zonas donde el 30.2% menos incierto de la cohorte no contiene ningún error del modelo.
+Este proyecto demuestra que cuando MedGemma-4B (un Vision-Language Model médico basado en Gemma 3) se equivoca al clasificar una imagen de fondo de ojo como glaucoma/normal, el **desacuerdo entre su representación visual interna y su representación textual** — medido por la divergencia KL entre los hidden states de los tokens de imagen y el estado que condiciona el token de respuesta, en la última capa del decoder — es significativamente mayor que cuando acierta (AUROC = 0.661, IC 95% [0.522, 0.772], p = 0.006). La señal es **training-free**, **single-pass** (costo computacional 1×) y **cross-modal**: tres propiedades que esta técnica de Uncertainty Quantification (UQ) reúne simultáneamente. Además, la **fusión parameter-free por ranks** `rank(KL) + rank(1−MSP)` — contribución original del autor — mejora la detección de errores a AUROC = 0.698 y, sobre todo, reduce el riesgo de selective prediction (Excess-AURC = 0.407 frente a 0.670 de la KL sola), habilitando un esquema clínico de triage en tres zonas donde el 30.2% menos incierto de la cohorte no contiene ningún error del modelo.
 
 ---
 
@@ -24,13 +24,13 @@ Este proyecto demuestra que cuando MedGemma-4B (un Vision-Language Model médico
 | 03 | [Hipótesis y Diseño Experimental](03_Hipotesis_y_Diseno_Experimental.md) | H1–H4, variables, protocolo, prompts congelados, métricas |
 | 04 | [Arquitectura Técnica](04_Arquitectura_Tecnica.md) | MedGemma-4B, extracción de representaciones, KL/JSD/coseno, 8 poolings, señal combinada |
 | 05 | [Implementación Software](05_Implementacion_Software.md) | Stack, módulos `src/`, formatos de datos, reproducibilidad |
-| 06 | [Resultados Experimentales](06_Resultados_Experimentales.md) | **Documento central:** H1–H3, accuracy-coverage, zona verde, baselines multi-pass, generalización |
+| 06 | [Resultados Experimentales](06_Resultados_Experimentales.md) | **Documento central:** H1–H3, accuracy-coverage, zona verde, baselines multi-pass, generalización, calibración (Fig 10 + T5) |
 | 07 | [Ablaciones y Análisis Profundo](07_Ablaciones_y_Analisis_Profundo.md) | Tipo de divergencia, pooling, temperatura, capa, prompt, baselines multi-pass |
 | 08 | [Discusión y Limitaciones](08_Discusion_y_Limitaciones.md) | Interpretación teórica, posicionamiento vs. estado del arte, contribuciones, limitaciones, riesgos, future work |
 | 09 | [Dataset MM-ODIR-129](09_Dataset_MM_ODIR_129.md) | Origen, estructura, anotaciones, artefactos, estadística, ética |
 | 10 | [Guía de Reproducibilidad](10_Guia_Reproducibilidad.md) | Requisitos, instalación, HuggingFace, comandos, validaciones |
 | 11 | [Conclusiones y Próximos Pasos](11_Conclusiones_y_Proximos_Pasos.md) | Contribuciones, verificación de hipótesis, roadmap doctoral |
-| 12 | [Verificación y Validación](12_Verificacion_y_Validacion.md) | Verificación independiente (val_08), robustez cross-GPU, zona verde, lecciones aprendidas |
+| 12 | [Verificación y Validación](12_Verificacion_y_Validacion.md) | Verificación independiente (val_08), robustez cross-GPU, zona verde, validación de calibración (val_09), lecciones aprendidas |
 
 **Figuras:** todas en [`assets/`](assets/) (copiadas desde `figures/` del proyecto; están en inglés por convención de publicación).
 
@@ -50,8 +50,9 @@ Este proyecto demuestra que cuando MedGemma-4B (un Vision-Language Model médico
 | Baseline self-consistency (SC, 10×)              | ✅      | 50 imgs × 10 muestras × 2 prompts a T=1.5                                                  |
 | Señal combinada `rank(KL)+rank(1−MSP)`           | ✅      | Contribución original — mejor señal del estudio                                            |
 | Evaluación estadística completa                  | ✅      | BCa bootstrap, Mann-Whitney, Spearman H4, AURC/Excess-AURC, Monte Carlo CV                 |
-| Figuras del paper (Fig 2–9 + heatmaps)           | ✅      | En `assets/`                                                                               |
-| Tablas T1–T4                                     | ✅      | Resultados, ablaciones, comparativa, costo-beneficio                                       |
+| Análisis de calibración (FUSE §5.2)                | ✅      | Platt en train, ECE, correlaciones, Brier, TPR@FPR; val_09 6/6 PASS                                    |
+| Figuras del paper (Fig 2–10 + heatmaps)           | ✅      | En `assets/` (resincronizadas con `figures/` el 04-ago)                                                                               |
+| Tablas T1–T5                                     | ✅      | Resultados, ablaciones, comparativa, costo-beneficio, calibración                                       |
 | Verificación independiente (val_08)              | ✅      | 19/19 checks PASS                                                                          |
 | Robustez cross-GPU                               | ✅      | Logits bitwise idénticos; Spearman 0.964                                                   |
 | Análisis de robustez por artefactos de anotación | ⏳      | **Pendiente obligatorio** antes de submission (ver [§8.4](08_Discusion_y_Limitaciones.md)) |
@@ -69,6 +70,7 @@ Este proyecto demuestra que cuando MedGemma-4B (un Vision-Language Model médico
 | ¿Sirve para triage?                          | Sí: derivando el 50% más incierto, accuracy 79.8% → 89.1%; zona verde del 30.2% sin errores |
 | ¿Correlaciona con la severidad del glaucoma? | No — H4 rechazada (rho = +0.001, p = 0.99)                                                  |
 | ¿Generaliza a pacientes nuevos?              | Estimación Monte Carlo: KL sola ~0.58–0.66; combinación 0.648–0.698                         |
+| ¿Está calibrada la señal?                        | KL: ECE 0.087, cal. Pearson/Spearman 0.748/0.789 — la mejor calibrada entre las 1×; la combinación discrimina más pero calibra peor (ECE 0.145). Evidencia secundaria (N=129, [§6.13](06_Resultados_Experimentales.md)) |
 | ¿Baselines multi-pass (2×/10×)?              | Dominados por nuestra señal 1× en el frente de Pareto                                       |
 
 ---
@@ -99,6 +101,11 @@ Este proyecto demuestra que cuando MedGemma-4B (un Vision-Language Model médico
 | **AUROC** | Área bajo la curva ROC para detectar errores del modelo (0.5 = azar) |
 | **AUPRC** | Área bajo la curva Precision-Recall |
 | **AURC / Excess-AURC** | Área bajo la curva riesgo-cobertura (selective prediction); Excess normalizado: 0 = oracle, 1 = azar |
+| **ECE (Expected Calibration Error)** | Media ponderada de $\bar{u}_{bin} - error_{empírico,bin}$ (en valor absoluto); mide la calibración de la señal (0 = perfecta) |
+| **Platt scaling** | Sigmoide de 1 feature que mapea $u(x) \rightarrow P(error)$; aquí se ajusta SOLO con el split train |
+| **Brier score** | Error cuadrático medio entre la probabilidad calibrada y el error observado |
+| **TPR@FPR** | Tasa de errores detectados permitiendo una tasa fija de falsas alarmas (5/10/20%) |
+| **reliability diagram** | Curva de $u(x)$ calibrada vs. frecuencia empírica de error por bins (Fig 10) |
 | **BCa bootstrap** | Intervalos de confianza por bootstrap corregido por sesgo y acelerado (9.999 remuestreos) |
 | **Mann-Whitney U** | Test no paramétrico de diferencia de distribuciones (errores vs. aciertos); $r$ = effect size |
 | **accuracy-coverage** | Accuracy del modelo reteniendo solo el X% menos incierto de casos |

@@ -155,9 +155,9 @@ Estadísticos reales sobre las 129 imágenes, prompt P1, **τ=1** (la temperatur
 | Señal (P1)                                   | AUROC     | IC 95%             | AURC       | Excess-AURC | p (Mann-Whitney) |
 | -------------------------------------------- | --------- | ------------------ | ---------- | ----------- | ---------------- |
 | **KL congelada (`kl_t_v` max τ=1, capa 34)** | **0.661** | [0.522, 0.772]     | 0.1425     | 0.670       | 0.006            |
-| 1−MSP (baseline gratis)                      | 0.624     | [0.491, 0.739]     | 0.1536     | 0.732       | 0.026            |
-| entropy (baseline)                           | 0.624     | [0.491, 0.739]     | 0.1536     | 0.732       | 0.026            |
-| energy (baseline)                            | 0.560     | [0.432, 0.680]     | 0.1828     | 0.895       | 0.175            |
+| 1−MSP (baseline gratis)                      | 0.624     | [0.491, 0.739]     | 0.1543     | 0.736       | 0.026            |
+| entropy (baseline)                           | 0.624     | [0.491, 0.739]     | 0.1543     | 0.736       | 0.026            |
+| energy (baseline)                            | 0.560     | [0.432, 0.680]     | 0.1830     | 0.896       | 0.175            |
 | **Combinación rank(KL)+rank(1−MSP)**         | **0.698** | **[0.596, 0.787]** | **0.0955** | **0.407**   | **0.001**        |
 
 Lectura honesta:
@@ -246,7 +246,7 @@ Las dos señales son **testigos que vieron cosas distintas**: su correlación es
 
 **Robustez entre GPUs y re-computación manual** (forward de las 129 imágenes en Colab, GPU distinta, backend eager): los logits son **bitwise idénticos** (0 de 129 predicciones cambian) → el input y el forward son perfectamente reproducibles entre hardware. La diferencia observada en la KL (+4.54 nats, casi constante) se explicó por completo por el `eps` de clamp: el pipeline usa `eps=1e-10` (`config.yaml`, techo ln(1/eps)=23.03) y el snippet de verificación usó 1e-12 (techo 27.63); 116/129 imágenes difieren en exactamente ln(1e-10/1e-12)=4.605. El ruido numérico real entre GPUs/backends es pequeño (std ≈ 0.4 nats) y no afecta al ranking: Spearman = 0.964, AUROC 0.645 vs 0.661 (Δ=0.016, dentro del IC bootstrap).
 
-**Hallazgo adicional — la KL está winsorizada:** el clamp en `eps` pone un techo en ln(1/eps)=23.03, y 53 de 129 imágenes están en el techo. Esto recorta la cola extrema (donde la softmax picada sobre hidden states crudos es numéricamente ruidosa); de hecho el AUROC con techo 1e-10 (0.661) es ligeramente mejor que con 1e-12 (0.645).
+**Hallazgo adicional — la KL está winsorizada:** el clamp en `eps` pone un techo en ln(1/eps)=23.03. Saturación real medida sobre `results_full.csv` (cifra corregida 04-ago): **24/129 imágenes ≥ 23.0 nats** en la variante ganadora (kl_t_v, max, τ=1; máx. observado 23.0238, sin tocar el techo exacto) y **61/129 en el techo exacto** (23.0259) en la dirección espejo (kl_v_t, max). Esto recorta la cola extrema (donde la softmax picada sobre hidden states crudos es numéricamente ruidosa); de hecho el AUROC con techo 1e-10 (0.661) es ligeramente mejor que con 1e-12 (0.645).
 
 **Implicaciones:** (a) mantener `epsilon` fijo entre corridas — un eps distinto desplaza TODOS los valores en una constante (ln del ratio); (b) la derivación clínica se define por percentil de la cohorte, no por umbral absoluto de nats; (c) la evaluación por AUROC es robusta a hardware, backend de atención y convención de eps.
 

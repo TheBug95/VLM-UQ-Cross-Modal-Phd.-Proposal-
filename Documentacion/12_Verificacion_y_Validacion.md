@@ -17,7 +17,7 @@ Principio rector: **nunca verificar con el mismo código que pudo tener el bug**
 
 ## 12.2 Validaciones pre-implementación (`val_01`–`val_07`)
 
-Antes de escribir el pipeline se validaron por separado (detalle en [§10.5](10_Guia_Reproducibilidad.md)): entorno (`val_01`), tokenizer (`val_02` — origen de los IDs congelados `yes` = 4443, `no` = 1904, `image_soft_token` = 262.144, `<start_of_image>` = 255.999, `<end_of_image>` = 256.000, y de la regla "máscara por ID, nunca slicing fijo"), dataset (`val_03`), API de `generate` (`val_04` — origen de la corrección "solo existe `hidden_states[0]` con `max_new_tokens=1`"), métricas (`val_05`), estadística (`val_06`) y piloto (`val_07` — origen de la regla numérica dura: softmax cruda en **float64**; las massive activations de Gemma colapsan la softmax en baja precisión).
+Antes de escribir el pipeline se validaron por separado (detalle en [§10.5](10_Guia_Reproducibilidad.md)): entorno (`val_01`), tokenizer (`val_02` — origen de los IDs congelados `yes` = 4443, `no` = 1904, `image_soft_token` = 262.144, `<start_of_image>` = 255.999, `<end_of_image>` = 256.000, y de la regla "máscara por ID, nunca slicing fijo"), dataset (`val_03`), API de `generate` (`val_04` — origen de la corrección "solo existe `hidden_states[0]` con `max_new_tokens=1`"), métricas (`val_05`), estadística (`val_06`) y piloto (`val_07` — origen de la regla numérica dura: softmax cruda en **float64**; las massive activations de Gemma colapsan la softmax en baja precisión). Con la incorporación del análisis de calibración (03-ago-2026) se añadió `val_09` (sanity sintético de Platt/bins/ECE/TPR@FPR sobre datos sintéticos, ver [§12.3b](#123b-validacionval_09_calibracionpy--6-checks-sintéticos-de-calibración)).
 
 ## 12.3 `validacion/val_08_resultados.py` — 19 checks independientes (todos PASS)
 
@@ -32,6 +32,21 @@ Grupos de checks:
 
 **Resultado: 19/19 PASS** (29-jul-2026).
 
+### 12.3b `validacion/val_09_calibracion.py` — 6 checks sintéticos de calibración
+
+Las métricas de calibración (Platt, bins, ECE, correlaciones, TPR@FPR) se probaron contra **datos sintéticos** donde la respuesta correcta se conoce de antemano — un bug aquí inflaría o desinflaría el claim de calibración del paper sin que nadie lo notara:
+
+| Check | Qué valida |
+|---|---|
+| V-CAL-1 | Calibrador casi perfecto ($u$ = P(error) real): ECE ≈ 0 y Pearson ≈ 1 |
+| V-CAL-2 | Señal constante (no informativa): guards devuelven NaN controlados, no excepciones |
+| V-CAL-3 | ECE de un predictor calibrado < ECE de uno sobreconfidente |
+| V-CAL-4 | Los bins cubren toda la masa (Σ n_b = N) y son equiprobables (±1) |
+| V-CAL-5 | Platt es monótona creciente en $u$ ($a > 0$) cuando $u$ se correlaciona con el error |
+| V-CAL-6 | TPR@FPR20% ≡ `sensitivity_at_specificity(0.80)` salvo interpolación, y TPR crece con el FPR permitido |
+
+**Resultado: 6/6 PASS.** No requiere GPU ni el modelo: valida únicamente el código de calibración (`src/evaluation.py`).
+
 ## 12.4 Verificación desde el modelo (re-ejecución cross-GPU)
 
 Forward manual de las 129 imágenes en una **GPU distinta** (Colab, backend de atención eager), recomputando la KL independientemente del pipeline (`results/verificacion_manual_kl.csv`):
@@ -43,7 +58,7 @@ Forward manual de las 129 imágenes en una **GPU distinta** (Colab, backend de a
 
 ## 12.5 Robustez numérica (reglas duras)
 
-1. **KL winsorizada:** el clamp `eps = 1e-10` pone un techo en $\ln(1/\varepsilon) = 23.03$ nats; **53 de 129 imágenes están en el techo**. Es por diseño: recorta la cola numéricamente ruidosa (donde la softmax picada sobre hidden states crudos es inestable). Dato a favor: el AUROC con techo 1e-10 (0.661) es ligeramente **mejor** que con 1e-12 (0.645).
+1. **KL winsorizada:** el clamp `eps = 1e-10` pone un techo en $\ln(1/\varepsilon) = 23.03$ nats. Saturación real medida sobre `results_full.csv` (cifra corregida 04-ago): en la variante ganadora (kl_t_v, max, τ=1) **24/129 imágenes superan los 23.0 nats** sin alcanzar el techo exacto (máx. observado 23.0238); el techo exacto (23.0259) solo se satura en la dirección espejo (kl_v_t, max: **61/129**). Es por diseño: recorta la cola numéricamente ruidosa (donde la softmax picada sobre hidden states crudos es inestable). Dato a favor: el AUROC con techo 1e-10 (0.661) es ligeramente **mejor** que con 1e-12 (0.645).
 2. **`epsilon` fijo entre corridas:** un eps distinto desplaza TODOS los valores en una constante ($\ln$ del ratio de eps) → no comparar nats absolutos entre corridas con eps distinto.
 3. **Derivación clínica por percentil de la cohorte, nunca por umbral absoluto de nats** (los valores absolutos no son portables entre eps/hardware).
 4. **Reportar solo métricas de ranking** (AUROC/AUPRC/AURC), que son invariantes a esas constantes.

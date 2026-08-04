@@ -46,7 +46,7 @@ Ambas son **generalizables** por construcción: nada en la formulación ata la s
 | 7 | **SC evaluado en subconjunto de 50** | No comparable directamente con la cohorte; la comparación justa va etiquetada ([§6.10.3](06_Resultados_Experimentales.md)) |
 | 8 | **Verbalized degenerada** | Solo 2 valores (90/95): posible limitación **fundamental** de VLMs instruction-tuned para auto-evaluarse |
 | 9 | **Heatmaps sin validación cuantitativa** | No se midieron contra las segmentaciones ground truth de copa/disco |
-| 10 | **KL winsorizada** | Techo $\ln(1/\varepsilon)=23.03$ recorta la cola (53/129 en el techo); los valores absolutos no son portables entre $\varepsilon$/hardware → derivación clínica **por percentil de cohorte, nunca por umbral absoluto** |
+| 10 | **KL winsorizada** | Techo $\ln(1/\varepsilon)=23.03$ recorta la cola (24/129 por encima de 23.0 nats en la variante ganadora, sin tocar el techo exacto; el techo exacto solo se satura en la dirección espejo, 61/129); los valores absolutos no son portables entre $\varepsilon$/hardware → derivación clínica **por percentil de cohorte, nunca por umbral absoluto** |
 | 11 | **Softmax restringido** | $p_{yes}$ y MSP son scores binarios sobre 2 logits, no probabilidades calibradas de vocabulario completo (el SC reveló masa fuera de yes/no) |
 | 12 | **Zona verde in-sample** | 30.2% sin errores en ESTA cohorte; en pacientes nuevos el error esperado en la zona es ≲ 1/39 (regla de tres, IC hasta ~7.7%) |
 | 13 | **Prevalencia curada (~53% patológicos)** | No es prevalencia de screening (~6%): las métricas operativas no se trasladan directamente a población real |
@@ -58,6 +58,8 @@ Ambas son **generalizables** por construcción: nada en la formulación ata la s
 - **Sensibilidad a `epsilon`:** un eps distinto desplaza TODOS los valores de KL en una constante → mantener `epsilon` fijo entre corridas y no comparar nats absolutos entre corridas con eps distinto.
 - **⏳ PENDIENTE OBLIGATORIO (diseño congelado):** el **análisis de robustez excluyendo imágenes con `has_annotation_artifact`** (p. ej., la flecha quemada de `1281_right.jpg`). Es barato (filtrar el CSV, no re-cómputo) y **debe reportarse antes de cualquier submission** — si la flecha funciona como cue espurio correlacionado con la etiqueta, podría inflar la accuracy base y contaminar la interpretación clínica de la KL ([§9.4](09_Dataset_MM_ODIR_129.md)).
 - **Doble ciego:** la URL del dataset identifica al autor; en el PDF del paper se cita anonimizada ([§9.6](09_Dataset_MM_ODIR_129.md)).
+
+- **Calibración con N pequeño:** ECE y correlaciones con ~13 obs/bin son ruidosas y Platt es monótona por construcción → la calibración ([§6.13](06_Resultados_Experimentales.md)) es evidencia **secundaria** (ECE + reliability diagram), nunca el claim principal.
 
 ## 8.5 Trabajo futuro (roadmap para la tesis)
 
