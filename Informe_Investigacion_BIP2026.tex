@@ -364,7 +364,8 @@ La literatura de \UQ\ en segmentación es más madura en volumen pero igual de c
     \item \textbf{Test-Time Augmentation (TTA):} promediar predicciones sobre transformaciones de la imagen de entrada; costo multi-pasada y dependencia de que las transformaciones preserven la anatomía.
 
     \item \textbf{Deep supervision:} arquitecturas como UNet++ \citep{zhou2020unetpp} y nnU-Net con \textit{deep supervision} (DSV) \citep{isensee2021nnunet} entrenan una salida de máscara \emph{en cada nivel de profundidad} del decoder para regularizar el entrenamiento.
-    En la literatura estas salidas intermedias se descartan o se promedian en inferencia; \textbf{nadie las ha explotado como ensemble gratuito para \UQ\ training-free}.
+    En la literatura estas salidas intermedias se descartan o se promedian en inferencia.
+    El trabajo más cercano, \textit{Layer Ensembles} \citep{kushibar2022layer}, sí explota el desacuerdo entre profundidades como señal de incertidumbre en una sola pasada, pero adosando y \emph{entrenando} cabezas auxiliares nuevas sobre un U-Net; las cabezas DSV \emph{que ya existen} en las recetas estándar no han sido evaluadas como ensemble de \UQ\ estrictamente training-free (posicionamiento detallado en \Cref{sec:posicionamiento-seg}).
     Esta observación es la base arquitectónica de nuestra Propuesta II.
 
     \item \textbf{SAM y sus variantes médicas:} Segment Anything \citep{kirillov2023sam} introduce un image encoder ViT, un neck y un mask decoder ligero condicionado por prompts, e incluye una \textbf{cabeza de predicted IoU entrenada} que estima la calidad de cada máscara candidata.
@@ -745,10 +746,36 @@ Igualar o superar su correlación con el error usando una señal training-free (
 Compatibilidad dimensional de la cabeza en CNNs (sin adaptadores entrenados se rompe el claim training-free) & Priorizar arquitecturas con deep supervision nativa (cabezas ya entrenadas) y transformers (ancho constante) \\
 Upsampling de salidas de distinta resolución & Upsampling bilineal determinista a resolución común antes de la JSD \\
 Autocorrelación espacial (píxeles vecinos no son independientes $\Rightarrow$ tests por píxel inflan $n$) & Toda la inferencia estadística se hace \emph{a nivel imagen} (Spearman sobre $u(x)$ vs.~$1-\mathrm{Dice}$); los mapas son producto visual/XAI, no unidad estadística \\
-Reclamo de novedad & Revisión bibliográfica enfocada en UQ single-pass para segmentación \emph{antes} de escribir el paper (producto del semestre, \Cref{sec:productos}) \\
+Reclamo de novedad & Posicionamiento explícito contra el estado del arte ya realizado (\Cref{sec:posicionamiento-seg}); la contribución se delimita al régimen estrictamente training-free, a la formulación layer-BALD y al duelo contra el predicted IoU \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\subsection{Posicionamiento frente al estado del arte: ¿qué es exactamente novedoso?}
+\label{sec:posicionamiento-seg}
+
+Una revisión bibliográfica enfocada en \UQ\ single-pass para segmentación (realizada en agosto de 2026 como parte de este informe) obliga a precisar el reclamo de novedad con honestidad: \textbf{el concepto general de usar el desacuerdo entre profundidades como señal de incertidumbre en segmentación ya existe}, y no lo reivindicamos como tal.
+
+\paragraph{El vecino más cercano: Layer Ensembles.}
+\citet{kushibar2022layer} propusieron adosar cabezas de segmentación a bloques de distinta profundidad de un U-Net y combinar sus salidas como un ensemble en una sola pasada, introduciendo además AULA (\textit{Area Under Layer Agreement}), una métrica de incertidumbre a nivel imagen basada en el acuerdo Dice entre capas adyacentes.
+Su sucesor directo, EDUE \citep{abutalip2024edue}, guía ese mismo montaje con el desacuerdo entre anotadores expertos durante el entrenamiento y lo evalúa precisamente en copa y disco óptico (dataset RIGA de glaucoma), el dominio de esta tesis.
+Las diferencias con nuestra propuesta son tres: (i) Layer Ensembles \emph{construye} las cabezas auxiliares y las entrena como parte de la red, mientras que nosotros \emph{heredamos gratis} las cabezas que ya existen por la receta estándar de entrenamiento (DSV en nnU-Net/UNet++, decoder multi-capa de Mask2Former) o leemos estados intermedios vía logit lens sin añadir un solo parámetro; (ii) AULA es una heurística de acuerdo geométrico entre capas adyacentes, mientras que nuestra \Cref{eq:jsd-conjunto} es una medida information-teórica por píxel ---la información mutua entre la clase del píxel y la profundidad--- con propiedades formales (no negatividad, cota $\ln K$, simetría) y con la máscara de consenso como subproducto gratuito; (iii) EDUE requiere etiquetas multi-anotador y una fase de entrenamiento guiada, mientras que nuestra señal es estrictamente training-free.
+
+\paragraph{El ecosistema SAM.}
+La incertidumbre para SAM se ha abordado por tres rutas.
+La primera es la \emph{perturbación del espacio de prompts y umbrales}: SAIF \citep{wang2026saif}, también training-free y plug-and-play, construye un espacio de incertidumbre conjunto mediante perturbaciones estructuradas de la caja del prompt y variaciones del umbral de binarización.
+La segunda es la \emph{adaptación bayesiana} de tokens o pesos del modelo, que requiere reentrenamiento.
+La tercera, y la más cercana a nuestra instanciación SAM, es UncertainSAM \citep{kaiser2025uncertainsam}: entrena estimadores ligeros (MLPs) sobre los tokens latentes de SAM (tokens de máscara y de IoU) para predecir directamente la calidad y descomponer la incertidumbre en fuentes aleatorias (prompt, tarea) y epistémicas (tamaño del modelo); en inferencia es determinista y barato, pero los estimadores requieren una fase de entrenamiento con máscaras de referencia.
+La diferencia clave con nuestro montaje es \emph{qué se muestrea y a qué precio}: UncertainSAM aprende a estimar desde el latente \emph{final} del modelo, con datos; nosotros leemos \emph{varias profundidades} del encoder vía logit lens y repetimos únicamente el decoder ligero ($\sim$2\% del cómputo, $\approx 1.05\times$), sin datos ni entrenamiento.
+Nótese además que la ruta de perturbación de prompts y la nuestra muestrean ejes distintos (espacio de prompts vs.~profundidad), por lo que son complementarias y su combinación es trabajo futuro natural.
+
+\paragraph{El hueco en la taxonomía.}
+Las revisiones recientes de \UQ\ en segmentación médica \citep{ziaee2026uqsegsurvey} clasifican los métodos en bayesianos, deep ensembles, deterministas, TTA e híbridos, tratando la \UQ\ sobre foundation models como categoría transversal.
+Ninguna categoría cubre el desacuerdo cross-depth \emph{sin entrenamiento adicional} sobre arquitecturas estándar con deep supervision nativa ni sobre foundation models vía lectura de capas intermedias: ese es el hueco que ocupa esta propuesta.
+
+\paragraph{Declaración de contribución.}
+A la luz de lo anterior, la contribución de la Propuesta II se delimita a: (i) el primer montaje \emph{estrictamente training-free} de desacuerdo cross-depth ---sin añadir cabezas, parámetros, datos ni fase de entrenamiento--- sobre deep supervision nativa y sobre SAM vía logit lens; (ii) la formulación layer-BALD con interpretación de información mutua y máscara de consenso gratuita; (iii) el duelo contra el predicted IoU, una cabeza \emph{supervisada}, en segmentación oftálmica; y (iv) la narrativa unificada con la Propuesta I (del token al píxel: el mismo principio de desacuerdo interno leído gratis en dos familias de modelos).
+Se trata de una contribución de posición en el frente costo/calidad ---señal gratis frente a señal entrenada--- y no de la invención del concepto; el manuscrito derivado de esta propuesta lo declarará explícitamente.
 
 \subsection{Algoritmo completo}
 
@@ -1318,6 +1345,34 @@ The neural basis of error detection: Conflict monitoring and the error-related n
 Zhou, Z., Siddiquee, M.~M.~R., Tajbakhsh, N., y Liang, J. (2020).
 UNet++: Redesigning skip connections to exploit multiscale features in image segmentation.
 \emph{IEEE Transactions on Medical Imaging}, 39(6), 1856--1867.
+
+% --- Posicionamiento Propuesta II (Cref{sec:posicionamiento-seg}), agosto 2026 ---
+% Entradas verificadas; pendiente intercalar en orden alfabético estricto.
+
+\bibitem[Abutalip et~al., 2024]{abutalip2024edue}
+Abutalip, K., et~al. (2024).
+EDUE: Expert disagreement-guided one-pass uncertainty estimation for medical image segmentation.
+\emph{arXiv preprint arXiv:2403.16594}.
+
+\bibitem[Kaiser et~al., 2025]{kaiser2025uncertainsam}
+Kaiser, T., Norrenbrock, T., y Rosenhahn, B. (2025).
+UncertainSAM: Fast and efficient uncertainty quantification of the Segment Anything Model.
+\emph{ICML} (Proceedings of Machine Learning Research, 267), 28670--28688.
+
+\bibitem[Kushibar et~al., 2022]{kushibar2022layer}
+Kushibar, K., Campello, V., Garrucho, L., Linardos, A., Radeva, P., y Lekadir, K. (2022).
+Layer ensembles: A single-pass uncertainty estimation in deep learning for segmentation.
+\emph{MICCAI}, 514--524.
+
+\bibitem[Wang, Y. et~al., 2026]{wang2026saif}
+Wang, Y., et~al. (2026).
+SAIF: A stability-aware inference framework for medical image segmentation with the Segment Anything Model.
+\emph{arXiv preprint arXiv:2603.13533}.
+
+\bibitem[Ziaee y Ovens, 2026]{ziaee2026uqsegsurvey}
+Ziaee, S.~S. y Ovens, K. (2026).
+Uncertainty quantification in medical image segmentation: A comprehensive survey.
+\emph{Journal of Imaging}, 12(8), 341.
 
 \end{thebibliography}
 

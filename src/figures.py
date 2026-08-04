@@ -12,7 +12,8 @@ Generates:
     - Fig 7: UQ performance vs. computational cost (+ Table T4).
     - Fig 8: verbalized confidence degeneracy and miscalibration.
     - Fig 9: self-consistency signal boxplots.
-    - Tables T1-T4.
+    - Fig 10: reliability diagram (calibration, Platt fit on train only).
+    - Tables T1-T5 (T5: discrimination + calibration, FUSE §5.2 style).
 
 Usage:
     python -m src.figures                      # P1 prompt, winner chosen on train
@@ -38,8 +39,10 @@ from src.evaluation import (
     rank_combination_frame,
     select_winner,
     sensitivity_at_specificity,
+    calibration_analysis,
     excess_aurc,
     signal_frame,
+    tpr_at_fpr,
 )
 
 # ------------------------------------------------------------------------------
@@ -682,6 +685,75 @@ def fig9_sc_boxplots(cfg: Config, out_dir: Path) -> None:
 
 
 # ------------------------------------------------------------------------------
+# Fig 10: reliability diagram (calibración estilo Guo et al. 2017 / FUSE §5.2)
+# ------------------------------------------------------------------------------
+def fig10_reliability(signals: dict[str, pd.DataFrame], out_path: Path) -> None:
+    """Error empírico por bin vs. u calibrada media (Platt en train) (English).
+
+    Cada señal se calibra con su propio Platt ajustado SOLO en train; los bins
+    son equiprobables (10 bins ≈ 13 obs/bin con N=129). La diagonal es la
+    calibración perfecta P(error) = u*.
+    """
+    fig, ax = plt.subplots(figsize=(6.4, 5.6))
+
+    for name, frame in signals.items():
+        cal = calibration_analysis(frame, n_bootstrap=0)
+        bins = cal["bins"]
+        if bins.empty or np.isnan(cal["ece"]):
+            continue
+        ax.plot(bins["mean_u"], bins["empirical_error"], marker="o", markersize=5,
+                linewidth=2, label=f"{name} (ECE={cal['ece']:.3f})",
+                color=SIGNAL_COLORS.get(_signal_key(name)))
+
+    ax.plot([0, 1], [0, 1], color="0.5", linestyle="--",
+            label="Perfect calibration", linewidth=1)
+    ax.set_xlabel("Mean calibrated uncertainty u* per bin (Platt fit on train)")
+    ax.set_ylabel("Empirical error rate per bin")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect("equal")
+    ax.set_title("Reliability diagram — calibrated uncertainty vs. empirical error (P1)\n"
+                 "(10 equal-mass bins; Platt scaling fit on train split only)", fontsize=10)
+    ax.legend(loc="upper left", fontsize=7.5, framealpha=0.9)
+    sns.despine(ax=ax)
+    plt.tight_layout()
+    plt.savefig(out_path)
+    plt.close()
+    print(f"[fig] Saved: {out_path}")
+
+
+# ------------------------------------------------------------------------------
+# Tabla T5: discriminación + calibración lado a lado (espejo de FUSE Table 1)
+# ------------------------------------------------------------------------------
+def table_t5_calibracion(signals: dict[str, pd.DataFrame], out_path: Path) -> pd.DataFrame:
+    """Tabla de discriminación (AUROC, TPR@FPR) y calibración (ECE, corr, Brier)."""
+    rows = []
+    for name, frame in signals.items():
+        y_error, vals = _y_v(frame)
+        if len(np.unique(vals)) < 2:
+            continue
+        auroc = roc_auc_score(y_error, vals)
+        tf = tpr_at_fpr(1 - y_error, vals)
+        cal = calibration_analysis(frame, n_bootstrap=0)
+        rows.append({
+            "Signal": name,
+            "AUROC": f"{auroc:.3f}",
+            "TPR@FPR5%": f"{tf['tpr_fpr05']:.3f}",
+            "TPR@FPR10%": f"{tf['tpr_fpr10']:.3f}",
+            "TPR@FPR20%": f"{tf['tpr_fpr20']:.3f}",
+            "ECE": f"{cal['ece']:.3f}" if not np.isnan(cal["ece"]) else "—",
+            "Cal. Pearson": f"{cal['pearson']:.3f}" if not np.isnan(cal["pearson"]) else "—",
+            "Cal. Spearman": f"{cal['spearman']:.3f}" if not np.isnan(cal["spearman"]) else "—",
+            "Brier": f"{cal['brier']:.3f}" if not np.isnan(cal["brier"]) else "—",
+            "Cost": "1×",
+        })
+    t5 = pd.DataFrame(rows)
+    t5.to_csv(out_path, index=False)
+    print(f"[table] Saved: {out_path}")
+    return t5
+
+
+# ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
 def main() -> None:
@@ -735,6 +807,10 @@ def main() -> None:
     fig7_tabla_t4_costo(df, cfg, out_dir)
     fig8_verbalized(cfg, out_dir)
     fig9_sc_boxplots(cfg, out_dir)
+
+    # Calibración (protocolo FUSE §5.2): reliability diagram + tabla discriminación/calibración
+    fig10_reliability(signals, out_dir / "fig10_reliability.png")
+    table_t5_calibracion(signals, out_dir / "tabla_t5_calibracion.csv")
 
     print(f"\n[figures] All figures and tables saved to {out_dir}")
 

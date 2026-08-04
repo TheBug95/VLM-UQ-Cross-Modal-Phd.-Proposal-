@@ -90,7 +90,9 @@ G:/.../BIP 2026/Codigo/
     ├── val_04_generate_api.py
     ├── val_05_metrics.py
     ├── val_06_stats.py
-    └── val_07_pilot.py
+    ├── val_07_pilot.py
+    ├── val_08_resultados.py
+    └── val_09_calibracion.py                    # sanity sintético de Platt/bins/ECE/TPR@FPR
 ```
 
 Datos de verificación del dataset en `../data/mm_odir_129_preview/` (annotations.json, split.json y 2 imágenes de muestra descargadas el 21-jul).
@@ -111,8 +113,8 @@ La infraestructura de configuración y la tabla maestra ya existen (`src/config.
    - máscara por ID de token de imagen (¡nunca slicing fijo `[:, :256, :]`!);
    - 1 paso de decode greedy para logits de "yes"/"no" y hidden state del token de respuesta.
 4. **`src/uncertainty.py`** — pooling ponderado por ROI (máscaras de disco, *oracle*), pooling ponderado por **atención cruzada** (deployable, sin máscaras externas) y heatmaps de atención. Responde a la crítica de *dilución espacial* (disco óptico = 5–10% de la imagen). **Regla numérica dura (detectada en val_07, 23-jul-2026):** la KL/JSD sobre hidden states se computa SIEMPRE con `F.log_softmax` en **float64** tras **z-score normalization** — las *massive activations* de Gemma colapsan `softmax` a distribuciones degeneradas incluso en float64. JSD = `scipy.spatial.distance.jensenshannon` **al cuadrado** (devuelve distancia, no divergencia). Computa además los baselines de igual costo (entropy, MSP, energy, TS) y el baseline 2× verbalized confidence (P5: parsing directo del número 0–100; u(x)=1−conf/100; solo sobre P1).
-5. **`src/evaluation.py`** — análisis estadístico sobre el CSV en **formato largo** (implementado, 29-jul-2026). Selección de la variante ganadora SOLO en train (excluye poolings oracle), bootstrap CI BCa (9.999 remuestreos) para AUROC/AUPRC, Mann-Whitney + effect size, Spearman con permutación (H4), sensitivity@80%spec, curvas accuracy-coverage, baselines de igual costo (entropy, 1-MSP, energy) y señal combinada `rank(KL)+rank(1-MSP)` (sin parámetros). `--all-signals` para tabla rápida de AUROC por variante. Guarda `results/evaluation_summary.csv`.
-6. **`src/figures.py`** — Figuras 2–5 y Tablas 1–3 sobre formato largo (reusa helpers de `src.evaluation`; la ganadora se elige en train o se pasa con `--signal`). Fig 2 boxplot, Fig 3 ROC/PR, Fig 4 accuracy-coverage, Fig 5 cuadrantes; T1 resultados, T2 ablaciones (groupby directo en formato largo), T3 comparativa de la literatura.
+5. **`src/evaluation.py`** — análisis estadístico sobre el CSV en **formato largo** (implementado, 29-jul-2026). Selección de la variante ganadora SOLO en train (excluye poolings oracle), bootstrap CI BCa (9.999 remuestreos) para AUROC/AUPRC, Mann-Whitney + effect size, Spearman con permutación (H4), sensitivity@80%spec, TPR a FPR fijos (5%/10%/20%), curvas accuracy-coverage, baselines de igual costo (entropy, 1-MSP, energy) y señal combinada `rank(KL)+rank(1-MSP)` (sin parámetros). **Calibración estilo FUSE §5.2 (añadido 03-ago-2026):** Platt scaling ajustado SOLO en train por señal, bins equiprobables (10 ≈ 13 obs/bin), ECE (+sensibilidad con 5 bins), correlaciones de calibración Pearson/Spearman y Brier, con IC bootstrap percentil 95%; flag `in_sample` cuando el split de análisis es train. `--all-signals` para tabla rápida de AUROC por variante. Guarda `results/evaluation_summary.csv`. ⚠️ Las correlaciones de calibración son evidencia SECUNDARIA (Platt es monótona por construcción); la evidencia principal es ECE + reliability diagram.
+6. **`src/figures.py`** — Figuras 2–10 y Tablas 1–5 sobre formato largo (reusa helpers de `src.evaluation`; la ganadora se elige en train o se pasa con `--signal`). Fig 2 boxplot, Fig 3 ROC/PR, Fig 4 accuracy-coverage, Fig 5 cuadrantes, Fig 10 reliability diagram de calibración (Platt en train, bins equiprobables); T1 resultados, T2 ablaciones (groupby directo en formato largo), T3 comparativa de la literatura, T5 discriminación + calibración lado a lado (espejo de FUSE Table 1).
 7. **`results/results_full.csv`** — CSV central (una fila por imagen × prompt; esquema en §6.3). **Escritura incremental (append) para reanudabilidad.**
 
 **Volumen de cómputo:** 129 imágenes × 2 prompts = 258 inferencias ≈ 10–20 min de GPU. La reanudabilidad es buena práctica pero ya no es crítica.
@@ -204,6 +206,7 @@ python validacion/val_05_metrics.py
 python validacion/val_06_stats.py
 python validacion/val_04_generate_api.py   # requiere GPU + licencia
 python validacion/val_07_pilot.py          # requiere GPU + licencia
+python validacion/val_09_calibracion.py    # sanity sintético de calibración (sin GPU)
 ```
 
 ### 7.4 Comandos del pipeline (por implementar)

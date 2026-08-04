@@ -11,8 +11,12 @@ Implementa:
     - Bootstrap CI (BCa) para AUROC y AUPRC (9.999 remuestreos).
     - Mann-Whitney U + effect size r = |Z|/√N.
     - Spearman para H4 (correlación con severidad CDR) con permutación.
-    - Sensitivity @ 80% specificity (métrica clínica).
+    - Sensitivity @ 80% specificity (métrica clínica) y TPR a FPR fijos
+      (rejilla 5%/10%/20%, protocolo FUSE §5.2).
     - Curvas accuracy-coverage.
+    - Calibración estilo Guo et al. 2017 / FUSE §5.2: Platt scaling ajustado
+      SOLO en train, bins equiprobables, ECE, correlaciones de calibración
+      (Pearson/Spearman) y Brier score, con IC bootstrap percentil.
     - Baselines de igual costo (entropy, 1-MSP, energy) y señal combinada
       rank(KL) + rank(1-MSP), que no requiere ajuste de parámetros.
 
@@ -31,7 +35,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score, roc_curve
 
 from src.config import Config
 
@@ -377,6 +382,173 @@ def excess_aurc(y_correct: np.ndarray, signal: np.ndarray) -> dict[str, float]:
 
 
 # ------------------------------------------------------------------------------
+# TPR a FPR fijos (protocolo FUSE §5.2: discriminación en puntos operativos)
+# ------------------------------------------------------------------------------
+def tpr_at_fpr(y_correct: np.ndarray, signal: np.ndarray,
+               fprs: tuple[float, ...] = (0.05, 0.10, 0.20)) -> dict[str, float]:
+    """TPR de detección de errores interpolado a FPR fijos (5%, 10%, 20%).
+
+    Invariante monotónica: se computa sobre la señal cruda (no calibrada).
+    """
+    y_error = 1 - y_correct
+    if len(np.unique(y_error)) < 2:
+        return {f"tpr_fpr{int(f * 100):02d}": np.nan for f in fprs}
+    fpr_curve, tpr_curve, _ = roc_curve(y_error, signal)
+    out = {}
+    for f in fprs:
+        # np.interp exige xp creciente; roc_curve devuelve fpr no decreciente
+        out[f"tpr_fpr{int(f * 100):02d}"] = float(np.interp(f, fpr_curve, tpr_curve))
+    return out
+
+
+# ------------------------------------------------------------------------------
+# Calibración (Guo et al. 2017; protocolo FUSE §5.2)
+#
+# La señal cruda (KL en nats) no vive en [0, 1]: para el test P(correct|u*) ≈ 1-u*
+# se ajusta un Platt scaling (sigmoide 1-feature u -> P(error)) SOLO con el split
+# train y se aplica al resto. Advertencias:
+#   - N=129 -> 10 bins ≈ 13 obs/bin: ECE y correlaciones son ruidosas; reportar
+#     SIEMPRE con IC bootstrap y lenguaje honesto.
+#   - Platt es monótona por construcción: correlaciones altas no prueban
+#     calibración por sí solas. ECE + reliability diagram son la evidencia
+#     principal; las correlaciones son secundarias.
+# ------------------------------------------------------------------------------
+def platt_calibrate(u_train: np.ndarray, y_err_train: np.ndarray,
+                    u_all: np.ndarray) -> dict[str, Any] | None:
+    """Platt scaling: sigmoide 1-feature u -> P(error), ajustada solo en train.
+
+    Devuelve dict con ``u_cal`` (probabilidades para ``u_all``) y los coeficientes
+    (a, b) para trazabilidad. None si el ajuste no es posible (una sola clase o
+    señal constante en train).
+    """
+    u_train = np.asarray(u_train, dtype=float)
+    y_err_train = np.asarray(y_err_train, dtype=float)
+    u_all = np.asarray(u_all, dtype=float)
+    if len(u_train) < 10 or len(np.unique(y_err_train)) < 2 or len(np.unique(u_train)) < 2:
+        return None
+    lr = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
+    lr.fit(u_train.reshape(-1, 1), y_err_train)
+    return {
+        "u_cal": lr.predict_proba(u_all.reshape(-1, 1))[:, 1],
+        "a": float(lr.coef_[0, 0]),
+        "b": float(lr.intercept_[0]),
+    }
+
+
+def calibration_bins(u_cal: np.ndarray, y_error: np.ndarray,
+                     n_bins: int = 10) -> pd.DataFrame:
+    """Bins equiprobables (quantiles) de u_calibrada vs. tasa de error empírica.
+
+    Columnas: ``bin, mean_u, empirical_error, n``. Bins con <2 valores únicos de
+    u se fusionan (``duplicates='drop'``), por lo que puede haber menos de
+    ``n_bins`` filas.
+    """
+    u_cal = np.asarray(u_cal, dtype=float)
+    y_error = np.asarray(y_error, dtype=float)
+    n_bins_eff = min(n_bins, len(u_cal))
+    if n_bins_eff < 2 or len(np.unique(u_cal)) < 2:
+        return pd.DataFrame({
+            "bin": [0], "mean_u": [float(np.mean(u_cal))],
+            "empirical_error": [float(np.mean(y_error))], "n": [int(len(u_cal))],
+        })
+    asign = pd.qcut(pd.Series(u_cal), q=n_bins_eff, labels=False, duplicates="drop")
+    df = pd.DataFrame({"bin": asign, "u": u_cal, "err": y_error})
+    return (
+        df.groupby("bin")
+        .agg(mean_u=("u", "mean"), empirical_error=("err", "mean"), n=("err", "size"))
+        .reset_index()
+    )
+
+
+def expected_calibration_error(bins: pd.DataFrame) -> float:
+    """ECE (versión incertidumbre): media ponderada |u_media - error_empírico|."""
+    if bins.empty or bins["n"].sum() == 0:
+        return np.nan
+    w = bins["n"] / bins["n"].sum()
+    return float((w * (bins["mean_u"] - bins["empirical_error"]).abs()).sum())
+
+
+def calibration_correlations(bins: pd.DataFrame) -> dict[str, float]:
+    """Pearson y Spearman entre u media por bin y error empírico por bin."""
+    if len(bins) < 3 or bins["mean_u"].nunique() < 2 or bins["empirical_error"].nunique() < 2:
+        return {"pearson": np.nan, "spearman": np.nan}
+    return {
+        "pearson": float(stats.pearsonr(bins["mean_u"], bins["empirical_error"]).statistic),
+        "spearman": float(stats.spearmanr(bins["mean_u"], bins["empirical_error"]).statistic),
+    }
+
+
+def calibration_analysis(frame_eval: pd.DataFrame, frame_fit: pd.DataFrame | None = None,
+                         n_bins: int = 10, n_bootstrap: int = 1999,
+                         random_state: int = 42) -> dict[str, Any]:
+    """Análisis de calibración completo de una señal.
+
+    Ajusta Platt con las filas ``split == 'train'`` de ``frame_fit`` (por defecto
+    el propio ``frame_eval``) y evalúa la calibración sobre ``frame_eval``.
+    Devuelve ECE, correlaciones Pearson/Spearman y Brier con IC bootstrap
+    percentil 95% (Platt fijo, remuestreo de observaciones), la tabla de bins,
+    la u calibrada, ECE con 5 bins (sensibilidad) y flags de trazabilidad.
+    """
+    empty = {"ece": np.nan, "ece_ci_low": np.nan, "ece_ci_high": np.nan,
+             "pearson": np.nan, "pearson_ci_low": np.nan, "pearson_ci_high": np.nan,
+             "spearman": np.nan, "spearman_ci_low": np.nan, "spearman_ci_high": np.nan,
+             "brier": np.nan, "ece_bins5": np.nan, "n_bins": 0,
+             "platt_a": np.nan, "platt_b": np.nan, "in_sample": True,
+             "bins": pd.DataFrame(), "u_cal": np.array([])}
+    if frame_fit is None:
+        frame_fit = frame_eval
+    ev = frame_eval.dropna(subset=["value"])
+    if len(ev) < 20 or len(np.unique(ev["correct"])) < 2:
+        return empty
+    fit = frame_fit.dropna(subset=["value"])
+    fit_train = fit[fit["split"] == "train"] if (fit["split"] == "train").any() else fit
+    in_sample = bool(ev["image_filename"].isin(set(fit_train["image_filename"])).all())
+
+    platt = platt_calibrate(fit_train["value"].values, 1 - fit_train["correct"].values,
+                            ev["value"].values)
+    if platt is None:
+        return empty
+
+    u_cal = platt["u_cal"]
+    y_error = (1 - ev["correct"].values).astype(float)
+
+    bins = calibration_bins(u_cal, y_error, n_bins=n_bins)
+    ece = expected_calibration_error(bins)
+    corr = calibration_correlations(bins)
+    brier = float(brier_score_loss(y_error, u_cal))
+    ece5 = expected_calibration_error(calibration_bins(u_cal, y_error, n_bins=5))
+
+    out = {
+        "ece": ece, "ece_ci_low": np.nan, "ece_ci_high": np.nan,
+        "pearson": corr["pearson"], "pearson_ci_low": np.nan, "pearson_ci_high": np.nan,
+        "spearman": corr["spearman"], "spearman_ci_low": np.nan, "spearman_ci_high": np.nan,
+        "brier": brier, "ece_bins5": ece5, "n_bins": int(len(bins)),
+        "platt_a": platt["a"], "platt_b": platt["b"], "in_sample": in_sample,
+        "bins": bins, "u_cal": u_cal,
+    }
+
+    if n_bootstrap and n_bootstrap > 0:
+        rng = np.random.default_rng(random_state)
+        n = len(u_cal)
+        boot = {"ece": [], "pearson": [], "spearman": []}
+        for _ in range(n_bootstrap):
+            idx = rng.integers(0, n, size=n)
+            if len(np.unique(y_error[idx])) < 2:
+                continue
+            b = calibration_bins(u_cal[idx], y_error[idx], n_bins=n_bins)
+            boot["ece"].append(expected_calibration_error(b))
+            c = calibration_correlations(b)
+            boot["pearson"].append(c["pearson"])
+            boot["spearman"].append(c["spearman"])
+        for key in boot:
+            vals = np.array([v for v in boot[key] if not np.isnan(v)])
+            if len(vals) >= 100:
+                out[f"{key}_ci_low"] = float(np.percentile(vals, 2.5))
+                out[f"{key}_ci_high"] = float(np.percentile(vals, 97.5))
+    return out
+
+
+# ------------------------------------------------------------------------------
 # Análisis completo de una señal (ya como frame imagen × valor)
 # ------------------------------------------------------------------------------
 def analyze_frame(
@@ -385,7 +557,9 @@ def analyze_frame(
     split: str = "all",
     master: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
-    """Análisis completo: AUROC/AUPRC con BCa, MWU, sens@80spec, H4."""
+    """Análisis completo: AUROC/AUPRC con BCa, MWU, sens@80spec, TPR@FPR, H4,
+    calibración (Platt ajustado en train, ECE/correlaciones/Brier con IC)."""
+    frame_fit = frame  # copia sin filtrar: de aquí salen las filas train para Platt
     if split == "val+test":
         frame = frame[frame["split"].isin(["validation", "test"])].copy()
     elif split != "all":
@@ -415,8 +589,10 @@ def analyze_frame(
     result["auprc"] = bootstrap_ci(y_error, signal, metric="auprc")
     result["mann_whitney"] = mann_whitney_effect(y_correct, signal)
     result["sens_80spec"] = sensitivity_at_specificity(y_correct, signal, target_spec=0.80)
+    result["tpr_fpr"] = tpr_at_fpr(y_correct, signal)
     result["acc_cov"] = accuracy_coverage(y_correct, signal)
     result["aurc"] = excess_aurc(y_correct, signal)
+    result["calibration"] = calibration_analysis(frame, frame_fit=frame_fit)
 
     if master is not None and "cdr_grade" in master.columns:
         merged = frame.merge(master[["image_filename", "cdr_grade"]], on="image_filename", how="left")
@@ -452,9 +628,24 @@ def print_signal_report(result: dict[str, Any]) -> None:
     s80 = result["sens_80spec"]
     print(f"Sensitivity@80%Spec: {s80['sensitivity']:.3f} (umbral={s80['threshold']:.4f})")
 
+    tf = result["tpr_fpr"]
+    print(f"TPR@FPR: 5%={tf['tpr_fpr05']:.3f} | 10%={tf['tpr_fpr10']:.3f} | 20%={tf['tpr_fpr20']:.3f}")
+
     arc = result["aurc"]
     print(f"AURC: {arc['aurc']:.4f} (oracle={arc['aurc_oracle']:.4f}, azar={arc['aurc_random']:.4f})"
           f" | Excess-AURC norm: {arc['excess_aurc_norm']:.3f} (0=oracle, 1=azar)")
+
+    cal = result["calibration"]
+    if not np.isnan(cal["ece"]):
+        tag = " [IN-SAMPLE: Platt ajustado en este mismo split]" if cal["in_sample"] else ""
+        print(f"Calibración (Platt en train, {cal['n_bins']} bins){tag}:")
+        print(f"  ECE: {cal['ece']:.3f} [{cal['ece_ci_low']:.3f}, {cal['ece_ci_high']:.3f}]"
+              f" | ECE(5 bins): {cal['ece_bins5']:.3f} | Brier: {cal['brier']:.3f}")
+        print(f"  Corr. calibración: Pearson={cal['pearson']:.3f} [{cal['pearson_ci_low']:.3f},"
+              f" {cal['pearson_ci_high']:.3f}] | Spearman={cal['spearman']:.3f}"
+              f" [{cal['spearman_ci_low']:.3f}, {cal['spearman_ci_high']:.3f}]")
+    else:
+        print("Calibración: n/a (datos insuficientes para Platt)")
 
     if "h4_spearman" in result:
         h4 = result["h4_spearman"]
@@ -462,6 +653,8 @@ def print_signal_report(result: dict[str, Any]) -> None:
 
 
 def _summary_row(r: dict[str, Any], prompt: str) -> dict[str, Any]:
+    cal = r["calibration"]
+    tf = r["tpr_fpr"]
     return {
         "prompt": prompt,
         "signal": r["signal"],
@@ -479,6 +672,16 @@ def _summary_row(r: dict[str, Any], prompt: str) -> dict[str, Any]:
         "mannwhitney_p": r["mann_whitney"]["p_value"],
         "effect_size_r": r["mann_whitney"]["r"],
         "sens_80spec": r["sens_80spec"]["sensitivity"],
+        "tpr_fpr05": tf["tpr_fpr05"],
+        "tpr_fpr10": tf["tpr_fpr10"],
+        "tpr_fpr20": tf["tpr_fpr20"],
+        "ece": cal["ece"],
+        "ece_ci_low": cal["ece_ci_low"],
+        "ece_ci_high": cal["ece_ci_high"],
+        "cal_pearson": cal["pearson"],
+        "cal_spearman": cal["spearman"],
+        "brier": cal["brier"],
+        "calibration_in_sample": cal["in_sample"],
     }
 
 
