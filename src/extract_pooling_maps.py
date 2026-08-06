@@ -62,7 +62,7 @@ def pooling_maps_for_image(
     split: str,
 ) -> dict[str, np.ndarray]:
     """Devuelve {pooling: array(256,)} con los pesos por token visual."""
-    prompt = pipe.build_prompt(prompt_id)
+    prompt = pipe.build_prompt(prompt_id.lower())  # config.yaml usa claves p1/p4
     inputs = pipe.processor(images=image, text=prompt, return_tensors="pt").to(pipe.device)
 
     with torch.inference_mode():
