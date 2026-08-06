@@ -42,7 +42,7 @@ Durante el forward pass de un VLM, los hidden states de las posiciones de imagen
 
 ## 2.2 Uncertainty Quantification en Deep Learning
 
-### 2.2.1 Taxonomía: incertidumbre aleática vs. epistémica
+### 2.2.1 Taxonomía: incertidumbre aleatórica vs. epistémica
 
 La literatura distingue dos fuentes de incertidumbre (Hüllermeier & Waegeman, 2021):
 

@@ -41,13 +41,13 @@ Las 97 variantes se ordenaron por AUROC **únicamente sobre el split train (77 i
 
 La señal KL cross-modal es **significativamente mayor en los errores que en los aciertos**:
 
-| Métrica | Valor |
-|---|---|
-| AUROC | **0.661** [0.522, 0.772] (BCa 95%, 9.999 remuestreos) |
-| AUPRC | 0.329 [0.183, 0.478] |
-| AURC | 0.1425 — Excess-AURC: 0.670 |
-| Mann-Whitney U | p = **0.0057**, effect size r = 0.223 |
-| Sensitivity @ 80% Specificity | 0.423 |
+| Métrica                       | Valor                                                 |
+| ----------------------------- | ----------------------------------------------------- |
+| AUROC                         | **0.661** [0.522, 0.772] (BCa 95%, 9.999 remuestreos) |
+| AUPRC                         | 0.329 [0.183, 0.478]                                  |
+| AURC                          | 0.1425 — Excess-AURC: 0.670                           |
+| Mann-Whitney U                | p = **0.0057**, effect size r = 0.223                 |
+| Sensitivity @ 80% Specificity | 0.423                                                 |
 
 **H1: VERIFICADA.** El IC excluye 0.5 (evidencia fuerte) y la estimación puntual cumple la meta de diseño (≥ 0.65). Con 26 errores, el AUPRC baseline (azar) sería 26/129 ≈ 0.202; el 0.329 observado duplica esa base.
 

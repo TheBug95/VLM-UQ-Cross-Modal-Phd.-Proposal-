@@ -95,6 +95,26 @@ G:/.../BIP 2026/Codigo/
     └── val_09_calibracion.py                    # sanity sintético de Platt/bins/ECE/TPR@FPR
 ```
 
+### Dashboard interactivo (`app/`, añadido 05-ago-2026)
+
+Dashboard Gradio + Plotly de solo lectura sobre los resultados ya computados (sin GPU, sin torch). 5 tabs: Panorama (galería de las 129 imágenes con ficha por caso), Explorador de señales (ROC/PR/boxplot/histograma recalculados en vivo), Simulador de triage (slider de cobertura), Resultados y tablas (T1/T2/T4/T5 + reliability + H4) y Asistente IA (LLM serverless de HF con las cifras reales inyectadas en el system prompt; fallback local por palabras clave si no hay `HF_TOKEN`).
+
+```text
+app/
+├── app.py                  # entry point (Gradio Blocks, 6 tabs)
+├── dashboard_data.py       # carga cacheada + métricas en numpy puro (AUROC por rangos)
+├── concepts.py             # glosario de conceptos (UI + system prompt del asistente)
+├── assistant.py            # chat IA: contexto de datos + LLM HF + fallback local
+├── prepare_assets.py       # copia CSVs + descarga dataset y genera thumbnails
+├── backend/
+│   └── extract_pooling_maps_colab.ipynb  # genera pooling_maps.csv en GPU (Colab T4)
+├── requirements.txt        # gradio, plotly, pandas, numpy, Pillow, huggingface_hub
+├── README.md               # metadata del HF Space (sdk: gradio)
+└── assets/                 # GENERADO (gitignored: contiene patient_id + imágenes)
+```
+
+Notas del dashboard: las métricas se recalculan en numpy puro (AUROC por rangos de Mann-Whitney — verificado: reproduce exactamente `evaluation_summary.csv`); H4 se reporta como **rechazada** (ρ=+0.001, p=0.99); el pooling `roi (oracle)` solo tiene las 69 patológicas en el CSV. Modelo del asistente configurable con `UQ_ASSISTANT_MODEL` (default `meta-llama/Llama-3.1-8B-Instruct`).
+
 Datos de verificación del dataset en `../data/mm_odir_129_preview/` (annotations.json, split.json y 2 imágenes de muestra descargadas el 21-jul).
 
 ---
@@ -240,6 +260,24 @@ python -m src.evaluation
 python -m src.figures
 ```
 
+### 7.5 Dashboard interactivo (sin GPU)
+
+```bash
+# Entorno propio (no mezclar con .venv del pipeline: no necesita torch)
+python -m venv .venv-app && source .venv-app/Scripts/activate
+pip install -r app/requirements.txt
+
+# Generar app/assets/ (copia CSVs + descarga el dataset y crea thumbnails)
+python app/prepare_assets.py
+
+# Ejecutar local → http://127.0.0.1:7860
+python app/app.py
+```
+
+**Mapas de pooling (requiere una pasada extra de GPU):** los CSVs solo guardan los valores escalares; los pesos por token de los 8 poolings se extraen con `python -m src.extract_pooling_maps --prompt P1` (~15–25 min en Colab T4; notebook listo en `app/backend/extract_pooling_maps_colab.ipynb`). Genera `results/pooling_maps.csv` (formato largo: image_filename, prompt_id, pooling, token_idx, weight); al copiarlo y re-correr `prepare_assets.py` aparece el tab «🗺️ Mapas de pooling». Si el CSV no existe, el tab muestra estas instrucciones.
+
+**Deploy en HF Spaces:** subir el contenido de `app/` (incluido `assets/`) a un Space con sdk Gradio (`huggingface_hub.upload_folder(repo_type="space")`); añadir el secret `HF_TOKEN` para el asistente IA completo. ⚠️ Doble ciego: no incluir la URL del dataset ni nada que identifique al autor mientras la submission esté en revisión.
+
 **Nota:** para ejecutar cualquier comando con MedGemma se requiere `HF_TOKEN` y la licencia HAI-DEF aceptada en HuggingFace. El dataset se descarga automáticamente vía `datasets`.
 
 ---
@@ -317,9 +355,9 @@ No hay framework de testing configurado. El diseño impone **8 sanity checks** q
 | **Grad-CAM sobre tokens de visión** | Requiere backward pass (no es single-pass); en transformers decoder-only los hidden states no son "píxeles"; bfloat16/4-bit hace gradientes inestables. | Future work del paper |
 | **Integrated Gradients (IG)** | Requiere 50–300 pasadas (rompe el framing 1× costo); equivalente a métodos multi-pass ya descartados. | Future work del paper |
 | **Atención cruzada** | Ya implementada como ablación deployable. Resultado: AUROC 0.559 < mean 0.655 → la atención del modelo frozen no está alineada con la tarea. | Tabla de ablaciones del paper |
-| **ROI con máscara de disco** | Implementada como *oracle* (no deployable). Resultado: AUROC 0.889 → cota superior que cuantifica la dilución espacial. | Tabla de ablaciones del paper |
+| **ROI con máscara de disco** | Implementada como *oracle* (no deployable; solo las 69 patológicas tienen máscara). El piloto de 20 imágenes sugirió AUROC 0.889, pero **no se reprodujo en la corrida completa: AUROC 0.349 (n=69)** — era artefacto de muestra pequeña. Hipótesis: la tensión informativa no vive solo en el disco; el contexto global del fundus (que `max` sí captura) aporta a la señal. | Tabla de ablaciones del paper; `Documentacion/07_Ablaciones_y_Analisis_Profundo.md` |
 
-**Conclusión:** la señal principal deployable es `mean` pooling. Grad-CAM/IG quedan como future work por costo computacional y por pertenecer a la familia XAI (explicación), no UQ (detección de errores).
+**Conclusión:** la señal principal deployable es la ganadora congelada (`kl_t_v`, capa 34, τ=1, pooling `max`). Grad-CAM/IG quedan como future work por costo computacional y por pertenecer a la familia XAI (explicación), no UQ (detección de errores).
 
 ---
 

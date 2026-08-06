@@ -34,6 +34,12 @@ venv.bak/
 data/
 *.tsv
 
+# Dashboard: assets derivados (contienen patient_id e imágenes del dataset)
+app/assets/
+
+# Entorno del dashboard
+.venv-app/
+
 # Modelos y checkpoints
 *.pt
 *.pth
@@ -46,6 +52,7 @@ data/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+!app/backend/*.ipynb
 
 # Sistema operativo
 .DS_Store

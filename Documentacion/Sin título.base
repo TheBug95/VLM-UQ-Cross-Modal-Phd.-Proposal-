@@ -1,0 +1,10 @@
+views:
+  - type: table
+    name: Tabla
+    order:
+      - file.name
+      - file.backlinks
+      - file.mtime
+      - file.path
+      - file.ext
+      - file.size
