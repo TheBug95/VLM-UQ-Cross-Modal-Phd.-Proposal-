@@ -21,10 +21,13 @@ Mapas extraídos (capa 34, misma pasada):
     roi      máscara de disco promediada por celda (oracle; solo 69 patológicas)
 
 Requiere GPU + HF_TOKEN + licencia HAI-DEF. En Colab T4 (~4.3 s/imagen):
-~10 min por prompt. Uso:
-    python -m src.extract_pooling_maps                 # P1, las 129
-    python -m src.extract_pooling_maps --prompt both   # P1 + P4
-    python -m src.extract_pooling_maps --n 5           # prueba rápida
+~10 min por prompt. Requisito: el dataset completo descargado (las máscaras
+`*_disc.png` son necesarias para el mapa `roi`) — `python -m src.data` lo
+garantiza. Desde el notebook de Colab habitual:
+
+    !python -m src.extract_pooling_maps --prompt P1 --n 3   # prueba rápida
+    !python -m src.extract_pooling_maps --prompt P1         # corrida completa
+    !python -m src.extract_pooling_maps --prompt both       # P1 + P4
 """
 
 from __future__ import annotations

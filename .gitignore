@@ -52,7 +52,6 @@ app/assets/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
-!app/backend/*.ipynb
 
 # Sistema operativo
 .DS_Store

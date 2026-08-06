@@ -106,8 +106,6 @@ app/
 ├── concepts.py             # glosario de conceptos (UI + system prompt del asistente)
 ├── assistant.py            # chat IA: contexto de datos + LLM HF + fallback local
 ├── prepare_assets.py       # copia CSVs + descarga dataset y genera thumbnails
-├── backend/
-│   └── extract_pooling_maps_colab.ipynb  # genera pooling_maps.csv en GPU (Colab T4)
 ├── requirements.txt        # gradio, plotly, pandas, numpy, Pillow, huggingface_hub
 ├── README.md               # metadata del HF Space (sdk: gradio)
 └── assets/                 # GENERADO (gitignored: contiene patient_id + imágenes)
@@ -274,7 +272,7 @@ python app/prepare_assets.py
 python app/app.py
 ```
 
-**Mapas de pooling (requiere una pasada extra de GPU):** los CSVs solo guardan los valores escalares; los pesos por token de los 8 poolings se extraen con `python -m src.extract_pooling_maps --prompt P1` (~15–25 min en Colab T4; notebook listo en `app/backend/extract_pooling_maps_colab.ipynb`). Genera `results/pooling_maps.csv` (formato largo: image_filename, prompt_id, pooling, token_idx, weight); al copiarlo y re-correr `prepare_assets.py` aparece el tab «🗺️ Mapas de pooling». Si el CSV no existe, el tab muestra estas instrucciones.
+**Mapas de pooling (requiere una pasada extra de GPU):** los CSVs solo guardan los valores escalares; los pesos por token de los 8 poolings se extraen con `python -m src.extract_pooling_maps --prompt P1` (~15–25 min en Colab T4; es un módulo más del pipeline, como `src.inference` — se corre desde el notebook de Colab habitual con `!python -m src.extract_pooling_maps ...`). Genera `results/pooling_maps.csv` (formato largo: image_filename, prompt_id, pooling, token_idx, weight); al copiarlo y re-correr `prepare_assets.py` aparece el tab «🗺️ Mapas de pooling». Si el CSV no existe, el tab muestra estas instrucciones.
 
 **Deploy en HF Spaces:** subir el contenido de `app/` (incluido `assets/`) a un Space con sdk Gradio (`huggingface_hub.upload_folder(repo_type="space")`); añadir el secret `HF_TOKEN` para el asistente IA completo. ⚠️ Doble ciego: no incluir la URL del dataset ni nada que identifique al autor mientras la submission esté en revisión.
 

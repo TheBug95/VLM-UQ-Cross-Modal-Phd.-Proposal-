@@ -231,12 +231,25 @@ INSTRUCCIONES_MAPAS = """\
 Los CSVs del experimento guardan solo los valores escalares de cada variante;
 los **pesos por token** de cada pooling se calculan en memoria durante la
 inferencia y se descartan. Para visualizarlos hace falta una pasada extra de GPU
-(~15–25 min en Colab T4, sin reentrenar nada):
+(~15–25 min en Colab T4, sin reentrenar nada).
 
-1. Abre el notebook **`app/backend/extract_pooling_maps_colab.ipynb`** en Google
-   Colab (runtime GPU T4) y sigue las celdas.
-2. Descarga el `pooling_maps.csv` generado y cópialo a `results/pooling_maps.csv`.
-3. Ejecuta `python app/prepare_assets.py` y reinicia el dashboard.
+En tu notebook de Colab con GPU (donde ya corre el proyecto), ejecuta:
+
+```bash
+# prueba rápida (~1 min)
+!python -m src.extract_pooling_maps --prompt P1 --n 3
+
+# corrida completa: las 129 imágenes × 8 poolings
+!python -m src.extract_pooling_maps --prompt P1
+```
+
+> Requisito: que el dataset esté descargado completo (con máscaras `*_disc.png`,
+> necesarias para el pooling `roi`) — `python -m src.data` lo garantiza.
+
+Después, en local:
+
+1. Copia el `results/pooling_maps.csv` generado a `results/pooling_maps.csv`.
+2. Ejecuta `python app/prepare_assets.py` y reinicia el dashboard.
 
 Se extraen los mapas 16×16 de las 8 técnicas (mean, max, topk, normw, attn,
 rollout, headspec y roi) para las 129 imágenes, capa 34.
