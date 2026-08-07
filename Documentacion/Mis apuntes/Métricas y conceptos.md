@@ -23,4 +23,8 @@
 # Prueba estadística U Mann-Withney: 
 - Es la prueba equivalente no paramétrica de la prueba t-test para grupos independientes 
 
-cantidad de parametos, tiempo de inferencia
+cantidad de parametos, tiempo de inferencia(Benchmark de modelos)
+
+Sparse Autoencoders que son?
+
+Diferentes tipos de Pooling en redes neuronales-Saber las que implementé y buscar otras para saber como funcionan e implementarlas para ver si funcxionan mejor

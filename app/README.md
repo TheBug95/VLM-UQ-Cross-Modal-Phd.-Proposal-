@@ -25,8 +25,10 @@ fondos de ojo, usando el desacuerdo entre sus representaciones visual y textual
   recalculados en vivo para todas las variantes de la señal (KL en ambas
   direcciones, JSD, coseno) y los baselines de igual costo.
 - **🗺️ Mapas de pooling** — heatmaps 16×16 de los pesos por token visual de
-  las 8 técnicas de pooling, superpuestos conceptualmente al fundus. Requiere
-  generar `pooling_maps.csv` con una pasada extra de GPU
+  las 8 técnicas de pooling, en dos vistas: **superpuesta** (overlay sobre el
+  fundus, pregenerado con `generate_heatmap_overlays.py`) y **grid
+  interactivo** (Plotly con hover por token). Requiere generar
+  `pooling_maps.csv` con una pasada extra de GPU
   (`python -m src.extract_pooling_maps` — ver las instrucciones en el propio tab).
 - **🚑 Simulador de triage** — mueve el slider de cobertura y observa cómo
   sube la accuracy al derivar los casos más inciertos al oftalmólogo.

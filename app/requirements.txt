@@ -4,3 +4,4 @@ pandas>=2.0
 numpy>=1.24
 Pillow>=10.0
 huggingface_hub>=0.20
+matplotlib>=3.7

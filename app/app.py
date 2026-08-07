@@ -30,6 +30,7 @@ except ImportError:
 
 THUMBS = Path(__file__).resolve().parent / "assets" / "thumbnails"
 THUMBS_SQ = Path(__file__).resolve().parent / "assets" / "thumbnails_square"
+HEATMAPS = Path(__file__).resolve().parent / "assets" / "heatmaps"
 
 VERDE = "#2ca02c"
 ROJO = "#d62728"
@@ -307,6 +308,31 @@ def actualizar_mapas(image_filename, prompt_id):
     return fig_mapas_pooling(image_filename, prompt_id), str(thumb)
 
 
+def overlays_de_imagen(image_filename):
+    """Items de galería con los 8 overlays pregenerados (o [] si no existen)."""
+    stem = Path(image_filename).stem
+    items = []
+    for pooling in dd.POOLING_MAPS_ORDEN:
+        path = HEATMAPS / f"{stem}_{pooling}.jpg"
+        if path.exists():
+            marca = " ⭐" if pooling == "max" else ""
+            items.append((str(path), f"{pooling}{marca}"))
+    return items
+
+
+def cambiar_vista_mapas(image_filename, prompt_id, vista):
+    fig, thumb = actualizar_mapas(image_filename, prompt_id)
+    overlays = overlays_de_imagen(image_filename)
+    if vista == "Superpuesta" and overlays:
+        return (gr.update(visible=True), overlays,
+                gr.update(visible=False), fig, thumb, "")
+    nota = "" if vista == "Grid interactivo" else (
+        "⚠️ Overlays no generados aún: corre `python app/generate_heatmap_overlays.py`."
+    )
+    return (gr.update(visible=False), [],
+            gr.update(visible=True), fig, thumb, nota)
+
+
 def actualizar_explorador(prompt, familia, pooling, tau, split):
     frame = dd.get_u(prompt, familia, pooling, tau, split)
     m = dd.metricas_basicas(frame)
@@ -529,19 +555,31 @@ def build_app() -> gr.Blocks:
                         label="Imagen", filterable=True,
                     )
                     mp_prompt = gr.Radio(prompts_maps, value=prompts_maps[0], label="Prompt")
-                with gr.Row():
-                    mp_fig = gr.Plot()
-                    mp_thumb = gr.Image(label="El fundus como lo ve el modelo (estirado a 896×896)",
-                                        height=560, width=560)
+                    mp_vista = gr.Radio(["Superpuesta", "Grid interactivo"],
+                                        value="Superpuesta", label="Vista")
+                mp_nota = gr.Markdown()
+                with gr.Group(visible=True) as mp_grp_overlay:
+                    mp_gallery = gr.Gallery(
+                        label="Heatmaps superpuestos sobre el fundus (8 técnicas)",
+                        columns=4, rows=2, height=560, object_fit="cover",
+                        allow_preview=True, show_label=True,
+                    )
+                with gr.Group(visible=False) as mp_grp_grid:
+                    with gr.Row():
+                        mp_fig = gr.Plot()
+                        mp_thumb = gr.Image(label="El fundus como lo ve el modelo (estirado a 896×896)",
+                                            height=560, width=560)
                 with gr.Accordion("📖 ¿Qué hace cada técnica?", open=False):
                     gr.Markdown("\n\n".join(
                         f"- **{p}**: {MAPAS_POOLING[p]}" for p in dd.POOLING_MAPS_ORDEN
                     ))
-                for ctrl in (mp_imagen, mp_prompt):
-                    ctrl.change(actualizar_mapas, [mp_imagen, mp_prompt],
-                                [mp_fig, mp_thumb])
-                demo.load(actualizar_mapas, [mp_imagen, mp_prompt],
-                          [mp_fig, mp_thumb])
+                salidas_mapas = [mp_grp_overlay, mp_gallery, mp_grp_grid,
+                                 mp_fig, mp_thumb, mp_nota]
+                for ctrl in (mp_imagen, mp_prompt, mp_vista):
+                    ctrl.change(cambiar_vista_mapas, [mp_imagen, mp_prompt, mp_vista],
+                                salidas_mapas)
+                demo.load(cambiar_vista_mapas, [mp_imagen, mp_prompt, mp_vista],
+                          salidas_mapas)
 
         with gr.Tab("🚑 Simulador de triage"):
             gr.Markdown(
